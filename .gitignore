@@ -1,0 +1,4 @@
+__pycache__/
+.claude/
+output/test_render/
+output/flip/*/*/frames/
