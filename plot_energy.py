@@ -7,13 +7,13 @@ comparison plots for the final report (Phase III).
 
 Usage:
     # Single self-check (auto-run by framework.py)
-    python plot_energy.py single output/flip/ratio_097/dam_break/energy.csv -o check.png
+    python plot_energy.py single output/flip/ratio_970/dam_break/energy.csv -o check.png
 
     # Cross-algorithm comparison
     python plot_energy.py compare \\
-        output/flip/ratio_097/dam_break/energy.csv \\
+        output/flip/ratio_970/dam_break/energy.csv \\
         output/apic/dam_break/energy.csv \\
-        output/polypic/dam_break/energy.csv \\
+        output/polypic/ratio_970/dam_break/energy.csv \\
         -o comparison/
 
     # Cross-ratio sweep (FLIP internal analysis)
@@ -21,9 +21,9 @@ Usage:
 
     # All-in-one
     python plot_energy.py all \\
-        --flip output/flip/ratio_097/ \\
+        --flip output/flip/ratio_970/ \\
         --apic output/apic/ \\
-        --polypic output/polypic/ \\
+        --polypic output/polypic/ratio_970/ \\
         -o report/
 """
 
@@ -337,7 +337,7 @@ def main():
     # all: combined report
     p_all = subparsers.add_parser('all', help='Full report with all three algorithms')
     p_all.add_argument('--flip', type=Path, required=True,
-                       help='FLIP base dir (e.g., output/flip/ratio_097/)')
+                       help='FLIP base dir (e.g., output/flip/ratio_970/)')
     p_all.add_argument('--apic', type=Path, default=None,
                        help='APIC base dir')
     p_all.add_argument('--polypic', type=Path, default=None,

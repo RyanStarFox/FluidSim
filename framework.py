@@ -13,6 +13,8 @@ Quick start:
     python framework.py dam_break
     python framework.py liquid_pouring
     python framework.py all
+    python framework.py dam_break polypic
+    python framework.py all 0.97 polypic
 """
 
 import os
@@ -65,6 +67,15 @@ MASS_PER_PARTICLE = RHO * (DX ** 3) / (PPC ** 3)
 # PIC-FLIP blend
 DEFAULT_FLIP_RATIO = 0.97
 FLIP_RATIOS = [0.97]
+DEFAULT_SOLVER_METHOD = "flip"
+SOLVER_METHODS = ("flip", "polypic")
+SOLVER_METHOD = DEFAULT_SOLVER_METHOD
+POLYPIC_EPS = 1e-12
+POLYPIC_VALUE_MAX = V_MAX_PHYS
+POLYPIC_C_MAX = 4.0 * V_MAX_PHYS / DX
+POLYPIC_Q_MAX = 4.0 * V_MAX_PHYS / (DX * DX)
+POLYPIC_C_DAMPING = 0.85
+POLYPIC_Q_DAMPING = 0.25
 
 # Cell type flags
 FLUID = 0
@@ -212,6 +223,28 @@ c5 = ti.field(ti.f32, shape=MAX_PARTICLES)
 c6 = ti.field(ti.f32, shape=MAX_PARTICLES)
 c7 = ti.field(ti.f32, shape=MAX_PARTICLES)
 c8 = ti.field(ti.f32, shape=MAX_PARTICLES)
+
+# Quadratic PolyPIC coefficients.
+# Per velocity component: [xx, yy, zz, xy, xz, yz].
+# q0..q5   -> u component, q6..q11 -> v component, q12..q17 -> w component.
+q0  = ti.field(ti.f32, shape=MAX_PARTICLES)
+q1  = ti.field(ti.f32, shape=MAX_PARTICLES)
+q2  = ti.field(ti.f32, shape=MAX_PARTICLES)
+q3  = ti.field(ti.f32, shape=MAX_PARTICLES)
+q4  = ti.field(ti.f32, shape=MAX_PARTICLES)
+q5  = ti.field(ti.f32, shape=MAX_PARTICLES)
+q6  = ti.field(ti.f32, shape=MAX_PARTICLES)
+q7  = ti.field(ti.f32, shape=MAX_PARTICLES)
+q8  = ti.field(ti.f32, shape=MAX_PARTICLES)
+q9  = ti.field(ti.f32, shape=MAX_PARTICLES)
+q10 = ti.field(ti.f32, shape=MAX_PARTICLES)
+q11 = ti.field(ti.f32, shape=MAX_PARTICLES)
+q12 = ti.field(ti.f32, shape=MAX_PARTICLES)
+q13 = ti.field(ti.f32, shape=MAX_PARTICLES)
+q14 = ti.field(ti.f32, shape=MAX_PARTICLES)
+q15 = ti.field(ti.f32, shape=MAX_PARTICLES)
+q16 = ti.field(ti.f32, shape=MAX_PARTICLES)
+q17 = ti.field(ti.f32, shape=MAX_PARTICLES)
 
 num_particles = ti.field(ti.i32, shape=())
 flip_ratio    = ti.field(ti.f32, shape=())
@@ -543,6 +576,506 @@ def p2g_trilinear():
 
 
 # =============================================================================
+# Particle <-> Grid -- quadratic PolyPIC transfer
+# =============================================================================
+
+@ti.func
+def _quad_bspline(f: ti.f32, offset: ti.template()) -> ti.f32:
+    """Quadratic B-spline weight for offsets 0, 1, 2."""
+    w = 0.0
+    if ti.static(offset == 0):
+        x = 1.5 - f
+        w = 0.5 * x * x
+    elif ti.static(offset == 1):
+        x = f - 1.0
+        w = 0.75 - x * x
+    else:
+        x = f - 0.5
+        w = 0.5 * x * x
+    return w
+
+
+@ti.func
+def _sanitize_limit(x: ti.f32, limit: ti.f32) -> ti.f32:
+    y = x
+    if y != y:
+        y = 0.0
+    if y > limit:
+        y = limit
+    if y < -limit:
+        y = -limit
+    return y
+
+
+@ti.func
+def _damped_limit(x: ti.f32, limit: ti.f32, damping: ti.f32) -> ti.f32:
+    return _sanitize_limit(x * damping, limit)
+
+
+@ti.kernel
+def p2g_polypic():
+    """Scatter a quadratic per-particle velocity polynomial to the MAC grid.
+
+    This is a practical PolyPIC branch for the existing 3D MAC solver.  Each
+    velocity component stores a local polynomial around the particle:
+        v(x) = v0 + C d + Q phi_2(d)
+    where d is the face position relative to the particle, C is c0..c8, and Q
+    is q0..q17.  Quadratic terms are centered by the local stencil moments so
+    they do not shift the constant velocity mode.
+    """
+    # Reset grid + weight buffers
+    for i, j, k in u:       u[i, j, k] = 0.0
+    for i, j, k in v:       v[i, j, k] = 0.0
+    for i, j, k in w:       w[i, j, k] = 0.0
+    for i, j, k in u_saved: u_saved[i, j, k] = 0.0
+    for i, j, k in v_saved: v_saved[i, j, k] = 0.0
+    for i, j, k in w_saved: w_saved[i, j, k] = 0.0
+
+    eps = ti.cast(POLYPIC_EPS, ti.f32)
+    val_lim = ti.cast(POLYPIC_VALUE_MAX, ti.f32)
+
+    for p in range(num_particles[None]):
+        xp = px[p] * INV_DX
+        yp = py[p] * INV_DX
+        zp = pz[p] * INV_DX
+
+        # --- u-field: faces at (i, j+0.5, k+0.5) ---
+        bu_i = ti.cast(ti.floor(xp - 0.5), ti.i32)
+        bu_j = ti.cast(ti.floor(yp - 1.0), ti.i32)
+        bu_k = ti.cast(ti.floor(zp - 1.0), ti.i32)
+        fu = xp - ti.cast(bu_i, ti.f32)
+        gu = (yp - 0.5) - ti.cast(bu_j, ti.f32)
+        hu = (zp - 0.5) - ti.cast(bu_k, ti.f32)
+        wsum = 0.0; m2x = 0.0; m2y = 0.0; m2z = 0.0
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fu, di)
+            ni = bu_i + di
+            dxp = (ti.cast(ni, ti.f32) - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gu, dj)
+                nj = bu_j + dj
+                dyp = (ti.cast(nj, ti.f32) + 0.5 - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hu, dk)
+                    nk = bu_k + dk
+                    dzp = (ti.cast(nk, ti.f32) + 0.5 - zp) * DX
+                    if 0 <= ni <= NX and 0 <= nj < NY and 0 <= nk < NZ:
+                        wt = wx * wy * wz
+                        wsum += wt
+                        m2x += wt * dxp * dxp
+                        m2y += wt * dyp * dyp
+                        m2z += wt * dzp * dzp
+        if wsum > eps:
+            m2x /= wsum; m2y /= wsum; m2z /= wsum
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fu, di)
+            ni = bu_i + di
+            dxp = (ti.cast(ni, ti.f32) - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gu, dj)
+                nj = bu_j + dj
+                dyp = (ti.cast(nj, ti.f32) + 0.5 - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hu, dk)
+                    nk = bu_k + dk
+                    dzp = (ti.cast(nk, ti.f32) + 0.5 - zp) * DX
+                    if 0 <= ni <= NX and 0 <= nj < NY and 0 <= nk < NZ:
+                        bxx = dxp * dxp - m2x
+                        byy = dyp * dyp - m2y
+                        bzz = dzp * dzp - m2z
+                        val = (pu[p] + c0[p] * dxp + c1[p] * dyp + c2[p] * dzp +
+                               q0[p] * bxx + q1[p] * byy + q2[p] * bzz +
+                               q3[p] * dxp * dyp + q4[p] * dxp * dzp +
+                               q5[p] * dyp * dzp)
+                        val = _sanitize_limit(val, val_lim)
+                        wt = wx * wy * wz
+                        u[ni, nj, nk] += wt * val
+                        u_saved[ni, nj, nk] += wt
+
+        # --- v-field: faces at (i+0.5, j, k+0.5) ---
+        bv_i = ti.cast(ti.floor(xp - 1.0), ti.i32)
+        bv_j = ti.cast(ti.floor(yp - 0.5), ti.i32)
+        bv_k = ti.cast(ti.floor(zp - 1.0), ti.i32)
+        fv = (xp - 0.5) - ti.cast(bv_i, ti.f32)
+        gv = yp - ti.cast(bv_j, ti.f32)
+        hv = (zp - 0.5) - ti.cast(bv_k, ti.f32)
+        wsum = 0.0; m2x = 0.0; m2y = 0.0; m2z = 0.0
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fv, di)
+            ni = bv_i + di
+            dxp = (ti.cast(ni, ti.f32) + 0.5 - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gv, dj)
+                nj = bv_j + dj
+                dyp = (ti.cast(nj, ti.f32) - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hv, dk)
+                    nk = bv_k + dk
+                    dzp = (ti.cast(nk, ti.f32) + 0.5 - zp) * DX
+                    if 0 <= ni < NX and 0 <= nj <= NY and 0 <= nk < NZ:
+                        wt = wx * wy * wz
+                        wsum += wt
+                        m2x += wt * dxp * dxp
+                        m2y += wt * dyp * dyp
+                        m2z += wt * dzp * dzp
+        if wsum > eps:
+            m2x /= wsum; m2y /= wsum; m2z /= wsum
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fv, di)
+            ni = bv_i + di
+            dxp = (ti.cast(ni, ti.f32) + 0.5 - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gv, dj)
+                nj = bv_j + dj
+                dyp = (ti.cast(nj, ti.f32) - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hv, dk)
+                    nk = bv_k + dk
+                    dzp = (ti.cast(nk, ti.f32) + 0.5 - zp) * DX
+                    if 0 <= ni < NX and 0 <= nj <= NY and 0 <= nk < NZ:
+                        bxx = dxp * dxp - m2x
+                        byy = dyp * dyp - m2y
+                        bzz = dzp * dzp - m2z
+                        val = (pv[p] + c3[p] * dxp + c4[p] * dyp + c5[p] * dzp +
+                               q6[p] * bxx + q7[p] * byy + q8[p] * bzz +
+                               q9[p] * dxp * dyp + q10[p] * dxp * dzp +
+                               q11[p] * dyp * dzp)
+                        val = _sanitize_limit(val, val_lim)
+                        wt = wx * wy * wz
+                        v[ni, nj, nk] += wt * val
+                        v_saved[ni, nj, nk] += wt
+
+        # --- w-field: faces at (i+0.5, j+0.5, k) ---
+        bw_i = ti.cast(ti.floor(xp - 1.0), ti.i32)
+        bw_j = ti.cast(ti.floor(yp - 1.0), ti.i32)
+        bw_k = ti.cast(ti.floor(zp - 0.5), ti.i32)
+        fw = (xp - 0.5) - ti.cast(bw_i, ti.f32)
+        gw = (yp - 0.5) - ti.cast(bw_j, ti.f32)
+        hw = zp - ti.cast(bw_k, ti.f32)
+        wsum = 0.0; m2x = 0.0; m2y = 0.0; m2z = 0.0
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fw, di)
+            ni = bw_i + di
+            dxp = (ti.cast(ni, ti.f32) + 0.5 - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gw, dj)
+                nj = bw_j + dj
+                dyp = (ti.cast(nj, ti.f32) + 0.5 - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hw, dk)
+                    nk = bw_k + dk
+                    dzp = (ti.cast(nk, ti.f32) - zp) * DX
+                    if 0 <= ni < NX and 0 <= nj < NY and 0 <= nk <= NZ:
+                        wt = wx * wy * wz
+                        wsum += wt
+                        m2x += wt * dxp * dxp
+                        m2y += wt * dyp * dyp
+                        m2z += wt * dzp * dzp
+        if wsum > eps:
+            m2x /= wsum; m2y /= wsum; m2z /= wsum
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fw, di)
+            ni = bw_i + di
+            dxp = (ti.cast(ni, ti.f32) + 0.5 - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gw, dj)
+                nj = bw_j + dj
+                dyp = (ti.cast(nj, ti.f32) + 0.5 - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hw, dk)
+                    nk = bw_k + dk
+                    dzp = (ti.cast(nk, ti.f32) - zp) * DX
+                    if 0 <= ni < NX and 0 <= nj < NY and 0 <= nk <= NZ:
+                        bxx = dxp * dxp - m2x
+                        byy = dyp * dyp - m2y
+                        bzz = dzp * dzp - m2z
+                        val = (pw[p] + c6[p] * dxp + c7[p] * dyp + c8[p] * dzp +
+                               q12[p] * bxx + q13[p] * byy + q14[p] * bzz +
+                               q15[p] * dxp * dyp + q16[p] * dxp * dzp +
+                               q17[p] * dyp * dzp)
+                        val = _sanitize_limit(val, val_lim)
+                        wt = wx * wy * wz
+                        w[ni, nj, nk] += wt * val
+                        w_saved[ni, nj, nk] += wt
+
+    # Normalize by accumulated weights
+    for i, j, k in u:
+        if u_saved[i, j, k] > eps:
+            u[i, j, k] /= u_saved[i, j, k]
+    for i, j, k in v:
+        if v_saved[i, j, k] > eps:
+            v[i, j, k] /= v_saved[i, j, k]
+    for i, j, k in w:
+        if w_saved[i, j, k] > eps:
+            w[i, j, k] /= w_saved[i, j, k]
+
+
+@ti.kernel
+def g2p_polypic():
+    """Fit quadratic velocity polynomials from the MAC grid back to particles."""
+    eps = ti.cast(POLYPIC_EPS, ti.f32)
+    v_lim = ti.cast(POLYPIC_VALUE_MAX, ti.f32)
+    c_lim = ti.cast(POLYPIC_C_MAX, ti.f32)
+    q_lim = ti.cast(POLYPIC_Q_MAX, ti.f32)
+    c_damp = ti.cast(POLYPIC_C_DAMPING, ti.f32)
+    q_damp = ti.cast(POLYPIC_Q_DAMPING, ti.f32)
+
+    for p in range(num_particles[None]):
+        xp = px[p] * INV_DX
+        yp = py[p] * INV_DX
+        zp = pz[p] * INV_DX
+
+        # --- u component ---
+        bu_i = ti.cast(ti.floor(xp - 0.5), ti.i32)
+        bu_j = ti.cast(ti.floor(yp - 1.0), ti.i32)
+        bu_k = ti.cast(ti.floor(zp - 1.0), ti.i32)
+        fu = xp - ti.cast(bu_i, ti.f32)
+        gu = (yp - 0.5) - ti.cast(bu_j, ti.f32)
+        hu = (zp - 0.5) - ti.cast(bu_k, ti.f32)
+        wsum = 0.0; vsum = 0.0; m2x = 0.0; m2y = 0.0; m2z = 0.0
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fu, di); ni = bu_i + di
+            dxp = (ti.cast(ni, ti.f32) - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gu, dj); nj = bu_j + dj
+                dyp = (ti.cast(nj, ti.f32) + 0.5 - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hu, dk); nk = bu_k + dk
+                    dzp = (ti.cast(nk, ti.f32) + 0.5 - zp) * DX
+                    if 0 <= ni <= NX and 0 <= nj < NY and 0 <= nk < NZ:
+                        wt = wx * wy * wz; val = u[ni, nj, nk]
+                        wsum += wt; vsum += wt * val
+                        m2x += wt * dxp * dxp
+                        m2y += wt * dyp * dyp
+                        m2z += wt * dzp * dzp
+        if wsum > eps:
+            pu[p] = vsum / wsum
+            m2x /= wsum; m2y /= wsum; m2z /= wsum
+        sx = 0.0; sy = 0.0; sz = 0.0
+        sxx = 0.0; syy = 0.0; szz = 0.0; sxy = 0.0; sxz = 0.0; syz = 0.0
+        dxn = 0.0; dyn = 0.0; dzn = 0.0
+        xxn = 0.0; yyn = 0.0; zzn = 0.0; xyn = 0.0; xzn = 0.0; yzn = 0.0
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fu, di); ni = bu_i + di
+            dxp = (ti.cast(ni, ti.f32) - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gu, dj); nj = bu_j + dj
+                dyp = (ti.cast(nj, ti.f32) + 0.5 - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hu, dk); nk = bu_k + dk
+                    dzp = (ti.cast(nk, ti.f32) + 0.5 - zp) * DX
+                    if 0 <= ni <= NX and 0 <= nj < NY and 0 <= nk < NZ:
+                        wt = wx * wy * wz
+                        dv = u[ni, nj, nk] - pu[p]
+                        bxx = dxp * dxp - m2x
+                        byy = dyp * dyp - m2y
+                        bzz = dzp * dzp - m2z
+                        bxy = dxp * dyp; bxz = dxp * dzp; byz = dyp * dzp
+                        sx += wt * dv * dxp; sy += wt * dv * dyp; sz += wt * dv * dzp
+                        sxx += wt * dv * bxx; syy += wt * dv * byy; szz += wt * dv * bzz
+                        sxy += wt * dv * bxy; sxz += wt * dv * bxz; syz += wt * dv * byz
+                        dxn += wt * dxp * dxp; dyn += wt * dyp * dyp; dzn += wt * dzp * dzp
+                        xxn += wt * bxx * bxx; yyn += wt * byy * byy; zzn += wt * bzz * bzz
+                        xyn += wt * bxy * bxy; xzn += wt * bxz * bxz; yzn += wt * byz * byz
+        c0[p] = 0.0
+        if dxn > eps: c0[p] = sx / dxn
+        c1[p] = 0.0
+        if dyn > eps: c1[p] = sy / dyn
+        c2[p] = 0.0
+        if dzn > eps: c2[p] = sz / dzn
+        q0[p] = 0.0
+        if xxn > eps: q0[p] = sxx / xxn
+        q1[p] = 0.0
+        if yyn > eps: q1[p] = syy / yyn
+        q2[p] = 0.0
+        if zzn > eps: q2[p] = szz / zzn
+        q3[p] = 0.0
+        if xyn > eps: q3[p] = sxy / xyn
+        q4[p] = 0.0
+        if xzn > eps: q4[p] = sxz / xzn
+        q5[p] = 0.0
+        if yzn > eps: q5[p] = syz / yzn
+
+        # --- v component ---
+        bv_i = ti.cast(ti.floor(xp - 1.0), ti.i32)
+        bv_j = ti.cast(ti.floor(yp - 0.5), ti.i32)
+        bv_k = ti.cast(ti.floor(zp - 1.0), ti.i32)
+        fv = (xp - 0.5) - ti.cast(bv_i, ti.f32)
+        gv = yp - ti.cast(bv_j, ti.f32)
+        hv = (zp - 0.5) - ti.cast(bv_k, ti.f32)
+        wsum = 0.0; vsum = 0.0; m2x = 0.0; m2y = 0.0; m2z = 0.0
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fv, di); ni = bv_i + di
+            dxp = (ti.cast(ni, ti.f32) + 0.5 - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gv, dj); nj = bv_j + dj
+                dyp = (ti.cast(nj, ti.f32) - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hv, dk); nk = bv_k + dk
+                    dzp = (ti.cast(nk, ti.f32) + 0.5 - zp) * DX
+                    if 0 <= ni < NX and 0 <= nj <= NY and 0 <= nk < NZ:
+                        wt = wx * wy * wz; val = v[ni, nj, nk]
+                        wsum += wt; vsum += wt * val
+                        m2x += wt * dxp * dxp
+                        m2y += wt * dyp * dyp
+                        m2z += wt * dzp * dzp
+        if wsum > eps:
+            pv[p] = vsum / wsum
+            m2x /= wsum; m2y /= wsum; m2z /= wsum
+        sx = 0.0; sy = 0.0; sz = 0.0
+        sxx = 0.0; syy = 0.0; szz = 0.0; sxy = 0.0; sxz = 0.0; syz = 0.0
+        dxn = 0.0; dyn = 0.0; dzn = 0.0
+        xxn = 0.0; yyn = 0.0; zzn = 0.0; xyn = 0.0; xzn = 0.0; yzn = 0.0
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fv, di); ni = bv_i + di
+            dxp = (ti.cast(ni, ti.f32) + 0.5 - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gv, dj); nj = bv_j + dj
+                dyp = (ti.cast(nj, ti.f32) - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hv, dk); nk = bv_k + dk
+                    dzp = (ti.cast(nk, ti.f32) + 0.5 - zp) * DX
+                    if 0 <= ni < NX and 0 <= nj <= NY and 0 <= nk < NZ:
+                        wt = wx * wy * wz
+                        dv = v[ni, nj, nk] - pv[p]
+                        bxx = dxp * dxp - m2x
+                        byy = dyp * dyp - m2y
+                        bzz = dzp * dzp - m2z
+                        bxy = dxp * dyp; bxz = dxp * dzp; byz = dyp * dzp
+                        sx += wt * dv * dxp; sy += wt * dv * dyp; sz += wt * dv * dzp
+                        sxx += wt * dv * bxx; syy += wt * dv * byy; szz += wt * dv * bzz
+                        sxy += wt * dv * bxy; sxz += wt * dv * bxz; syz += wt * dv * byz
+                        dxn += wt * dxp * dxp; dyn += wt * dyp * dyp; dzn += wt * dzp * dzp
+                        xxn += wt * bxx * bxx; yyn += wt * byy * byy; zzn += wt * bzz * bzz
+                        xyn += wt * bxy * bxy; xzn += wt * bxz * bxz; yzn += wt * byz * byz
+        c3[p] = 0.0
+        if dxn > eps: c3[p] = sx / dxn
+        c4[p] = 0.0
+        if dyn > eps: c4[p] = sy / dyn
+        c5[p] = 0.0
+        if dzn > eps: c5[p] = sz / dzn
+        q6[p] = 0.0
+        if xxn > eps: q6[p] = sxx / xxn
+        q7[p] = 0.0
+        if yyn > eps: q7[p] = syy / yyn
+        q8[p] = 0.0
+        if zzn > eps: q8[p] = szz / zzn
+        q9[p] = 0.0
+        if xyn > eps: q9[p] = sxy / xyn
+        q10[p] = 0.0
+        if xzn > eps: q10[p] = sxz / xzn
+        q11[p] = 0.0
+        if yzn > eps: q11[p] = syz / yzn
+
+        # --- w component ---
+        bw_i = ti.cast(ti.floor(xp - 1.0), ti.i32)
+        bw_j = ti.cast(ti.floor(yp - 1.0), ti.i32)
+        bw_k = ti.cast(ti.floor(zp - 0.5), ti.i32)
+        fw = (xp - 0.5) - ti.cast(bw_i, ti.f32)
+        gw = (yp - 0.5) - ti.cast(bw_j, ti.f32)
+        hw = zp - ti.cast(bw_k, ti.f32)
+        wsum = 0.0; vsum = 0.0; m2x = 0.0; m2y = 0.0; m2z = 0.0
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fw, di); ni = bw_i + di
+            dxp = (ti.cast(ni, ti.f32) + 0.5 - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gw, dj); nj = bw_j + dj
+                dyp = (ti.cast(nj, ti.f32) + 0.5 - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hw, dk); nk = bw_k + dk
+                    dzp = (ti.cast(nk, ti.f32) - zp) * DX
+                    if 0 <= ni < NX and 0 <= nj < NY and 0 <= nk <= NZ:
+                        wt = wx * wy * wz; val = w[ni, nj, nk]
+                        wsum += wt; vsum += wt * val
+                        m2x += wt * dxp * dxp
+                        m2y += wt * dyp * dyp
+                        m2z += wt * dzp * dzp
+        if wsum > eps:
+            pw[p] = vsum / wsum
+            m2x /= wsum; m2y /= wsum; m2z /= wsum
+        sx = 0.0; sy = 0.0; sz = 0.0
+        sxx = 0.0; syy = 0.0; szz = 0.0; sxy = 0.0; sxz = 0.0; syz = 0.0
+        dxn = 0.0; dyn = 0.0; dzn = 0.0
+        xxn = 0.0; yyn = 0.0; zzn = 0.0; xyn = 0.0; xzn = 0.0; yzn = 0.0
+        for di in ti.static(range(3)):
+            wx = _quad_bspline(fw, di); ni = bw_i + di
+            dxp = (ti.cast(ni, ti.f32) + 0.5 - xp) * DX
+            for dj in ti.static(range(3)):
+                wy = _quad_bspline(gw, dj); nj = bw_j + dj
+                dyp = (ti.cast(nj, ti.f32) + 0.5 - yp) * DX
+                for dk in ti.static(range(3)):
+                    wz = _quad_bspline(hw, dk); nk = bw_k + dk
+                    dzp = (ti.cast(nk, ti.f32) - zp) * DX
+                    if 0 <= ni < NX and 0 <= nj < NY and 0 <= nk <= NZ:
+                        wt = wx * wy * wz
+                        dv = w[ni, nj, nk] - pw[p]
+                        bxx = dxp * dxp - m2x
+                        byy = dyp * dyp - m2y
+                        bzz = dzp * dzp - m2z
+                        bxy = dxp * dyp; bxz = dxp * dzp; byz = dyp * dzp
+                        sx += wt * dv * dxp; sy += wt * dv * dyp; sz += wt * dv * dzp
+                        sxx += wt * dv * bxx; syy += wt * dv * byy; szz += wt * dv * bzz
+                        sxy += wt * dv * bxy; sxz += wt * dv * bxz; syz += wt * dv * byz
+                        dxn += wt * dxp * dxp; dyn += wt * dyp * dyp; dzn += wt * dzp * dzp
+                        xxn += wt * bxx * bxx; yyn += wt * byy * byy; zzn += wt * bzz * bzz
+                        xyn += wt * bxy * bxy; xzn += wt * bxz * bxz; yzn += wt * byz * byz
+        c6[p] = 0.0
+        if dxn > eps: c6[p] = sx / dxn
+        c7[p] = 0.0
+        if dyn > eps: c7[p] = sy / dyn
+        c8[p] = 0.0
+        if dzn > eps: c8[p] = sz / dzn
+        q12[p] = 0.0
+        if xxn > eps: q12[p] = sxx / xxn
+        q13[p] = 0.0
+        if yyn > eps: q13[p] = syy / yyn
+        q14[p] = 0.0
+        if zzn > eps: q14[p] = szz / zzn
+        q15[p] = 0.0
+        if xyn > eps: q15[p] = sxy / xyn
+        q16[p] = 0.0
+        if xzn > eps: q16[p] = sxz / xzn
+        q17[p] = 0.0
+        if yzn > eps: q17[p] = syz / yzn
+
+        # Stabilize the fitted high-order modes.  The independent projection
+        # above is intentionally cheap, so we bound the modes before they feed
+        # the next P2G pass.
+        pu[p] = _sanitize_limit(pu[p], v_lim)
+        pv[p] = _sanitize_limit(pv[p], v_lim)
+        pw[p] = _sanitize_limit(pw[p], v_lim)
+
+        c0[p] = _damped_limit(c0[p], c_lim, c_damp)
+        c1[p] = _damped_limit(c1[p], c_lim, c_damp)
+        c2[p] = _damped_limit(c2[p], c_lim, c_damp)
+        c3[p] = _damped_limit(c3[p], c_lim, c_damp)
+        c4[p] = _damped_limit(c4[p], c_lim, c_damp)
+        c5[p] = _damped_limit(c5[p], c_lim, c_damp)
+        c6[p] = _damped_limit(c6[p], c_lim, c_damp)
+        c7[p] = _damped_limit(c7[p], c_lim, c_damp)
+        c8[p] = _damped_limit(c8[p], c_lim, c_damp)
+
+        q0[p] = _damped_limit(q0[p], q_lim, q_damp)
+        q1[p] = _damped_limit(q1[p], q_lim, q_damp)
+        q2[p] = _damped_limit(q2[p], q_lim, q_damp)
+        q3[p] = _damped_limit(q3[p], q_lim, q_damp)
+        q4[p] = _damped_limit(q4[p], q_lim, q_damp)
+        q5[p] = _damped_limit(q5[p], q_lim, q_damp)
+        q6[p] = _damped_limit(q6[p], q_lim, q_damp)
+        q7[p] = _damped_limit(q7[p], q_lim, q_damp)
+        q8[p] = _damped_limit(q8[p], q_lim, q_damp)
+        q9[p] = _damped_limit(q9[p], q_lim, q_damp)
+        q10[p] = _damped_limit(q10[p], q_lim, q_damp)
+        q11[p] = _damped_limit(q11[p], q_lim, q_damp)
+        q12[p] = _damped_limit(q12[p], q_lim, q_damp)
+        q13[p] = _damped_limit(q13[p], q_lim, q_damp)
+        q14[p] = _damped_limit(q14[p], q_lim, q_damp)
+        q15[p] = _damped_limit(q15[p], q_lim, q_damp)
+        q16[p] = _damped_limit(q16[p], q_lim, q_damp)
+        q17[p] = _damped_limit(q17[p], q_lim, q_damp)
+
+
+# =============================================================================
 # Grid -> Particles (G2P) -- 3D PIC-FLIP blend
 # =============================================================================
 
@@ -624,10 +1157,16 @@ def g2p_flip():
         pv[p] = (1.0 - alpha) * v_new + alpha * (pv[p] + (v_new - v_old))
         pw[p] = (1.0 - alpha) * w_new + alpha * (pw[p] + (w_new - w_old))
 
-        # Clear affine matrix (FLIP does not use it; APIC/PolyPIC will set these)
+        # Clear higher-order modes (FLIP does not use APIC/PolyPIC state)
         c0[p] = 0.0; c1[p] = 0.0; c2[p] = 0.0
         c3[p] = 0.0; c4[p] = 0.0; c5[p] = 0.0
         c6[p] = 0.0; c7[p] = 0.0; c8[p] = 0.0
+        q0[p] = 0.0; q1[p] = 0.0; q2[p] = 0.0
+        q3[p] = 0.0; q4[p] = 0.0; q5[p] = 0.0
+        q6[p] = 0.0; q7[p] = 0.0; q8[p] = 0.0
+        q9[p] = 0.0; q10[p] = 0.0; q11[p] = 0.0
+        q12[p] = 0.0; q13[p] = 0.0; q14[p] = 0.0
+        q15[p] = 0.0; q16[p] = 0.0; q17[p] = 0.0
 
 
 # =============================================================================
@@ -642,6 +1181,17 @@ def advect_particles():
     dom_z = ti.cast(NZ, ti.f32) * DX - 1e-5
     v_lim = ti.cast(V_MAX_PHYS, ti.f32)
     for p in range(num_particles[None]):
+        if px[p] != px[p]:
+            px[p] = 0.5 * dom_x; pu[p] = 0.0
+        if py[p] != py[p]:
+            py[p] = 0.5 * dom_y; pv[p] = 0.0
+        if pz[p] != pz[p]:
+            pz[p] = 0.5 * dom_z; pw[p] = 0.0
+
+        pu[p] = _sanitize_limit(pu[p], v_lim)
+        pv[p] = _sanitize_limit(pv[p], v_lim)
+        pw[p] = _sanitize_limit(pw[p], v_lim)
+
         # CFL velocity clamp: prevent particles from skipping multiple cells
         spd = ti.sqrt(pu[p]*pu[p] + pv[p]*pv[p] + pw[p]*pw[p])
         if spd > v_lim:
@@ -694,6 +1244,12 @@ def _compact_particles_kernel(new_n: ti.i32):
             c0[dst] = c0[p]; c1[dst] = c1[p]; c2[dst] = c2[p]
             c3[dst] = c3[p]; c4[dst] = c4[p]; c5[dst] = c5[p]
             c6[dst] = c6[p]; c7[dst] = c7[p]; c8[dst] = c8[p]
+            q0[dst] = q0[p]; q1[dst] = q1[p]; q2[dst] = q2[p]
+            q3[dst] = q3[p]; q4[dst] = q4[p]; q5[dst] = q5[p]
+            q6[dst] = q6[p]; q7[dst] = q7[p]; q8[dst] = q8[p]
+            q9[dst] = q9[p]; q10[dst] = q10[p]; q11[dst] = q11[p]
+            q12[dst] = q12[p]; q13[dst] = q13[p]; q14[dst] = q14[p]
+            q15[dst] = q15[p]; q16[dst] = q16[p]; q17[dst] = q17[p]
 
 
 def remove_ghost_particles(max_height_frac: float = 0.55) -> int:
@@ -726,57 +1282,34 @@ def remove_ghost_particles(max_height_frac: float = 0.55) -> int:
 # =============================================================================
 
 def fluid_step():
-    """Execute one sub-step of the 3D FLIP fluid simulation.
+    """Execute one sub-step using the selected particle-grid transfer method.
 
-    THIS FUNCTION IS THE ONLY PLACE TEAMMATES SHOULD MODIFY.
-
-    Available global Taichi fields:
-        u[NX+1, NY,   NZ  ]  : x-velocity at x-MAC-faces
-        v[NX,   NY+1, NZ  ]  : y-velocity at y-MAC-faces
-        w[NX,   NY,   NZ+1]  : z-velocity at z-MAC-faces
-        u_saved, v_saved, w_saved : grid-velocity snapshots (FLIP delta)
-        cell_type[NX, NY, NZ] : FLUID=0, SOLID=1, AIR=2
-        pressure [NX, NY, NZ] : pressure (CG output)
-        px/py/pz/pu/pv/pw     : particle positions and velocities (MAX_PARTICLES)
-        c0..c8                : 3x3 affine velocity matrix (APIC/PolyPIC)
-        num_particles[None]   : active particle count
-        flip_ratio[None]      : PIC-FLIP blend (1.0 = pure FLIP)
-        div_field, cg_r, cg_p, cg_Ap : CG scratch fields
-
-    Available helper functions:
-        p2g_trilinear()              : 3D particle->grid trilinear transfer
-        save_velocities()            : snapshot u,v,w -> u_saved,v_saved,w_saved
-        add_gravity()                : v += GRAVITY_Y * DT
-        enforce_boundary_velocity()  : zero normal velocity at solid walls
-        compute_divergence()         : store nabla.u in div_field
-        solve_pressure_cg() -> int   : solve nabla^2p = div/dt, return iterations
-        apply_pressure_gradient(dt) : u,v,w -= dt * nablap
-        g2p_flip()                  : 3D grid->particles PIC-FLIP blend
-
-    Replace the body of this function for APIC (Student B) or PolyPIC (Student C).
+    SOLVER_METHOD == "flip" uses trilinear PIC/FLIP transfer.
+    SOLVER_METHOD == "polypic" uses quadratic Polynomial PIC transfer while
+    sharing the same gravity, boundary, pressure solve, advection, and render
+    path for apples-to-apples comparison.
     """
-    # P2G: scatter particle velocities to grid (trilinear weights)
-    p2g_trilinear()
+    if SOLVER_METHOD == "polypic":
+        p2g_polypic()
+    else:
+        p2g_trilinear()
 
-    # Save grid velocities before forces/projection (for FLIP delta)
+    # Save grid velocities before forces/projection (needed by FLIP delta).
     save_velocities()
 
-    # External forces
     add_gravity()
-
-    # Boundary conditions
     enforce_boundary_velocity()
 
-    # Pressure projection: nabla^2p = (nabla.u)/dt
     compute_divergence()
     solve_pressure_cg()
     apply_pressure_gradient(DT)
 
-    # Re-enforce BC after pressure correction
     enforce_boundary_velocity()
 
-    # G2P: update particle velocities (PIC-FLIP blend)
-    g2p_flip()
+    if SOLVER_METHOD == "polypic":
+        g2p_polypic()
+    else:
+        g2p_flip()
 
 
 # =============================================================================
@@ -966,7 +1499,9 @@ def compute_kinetic_energy() -> float:
     pu_np = pu.to_numpy()[:n]
     pv_np = pv.to_numpy()[:n]
     pw_np = pw.to_numpy()[:n]
-    return float(0.5 * MASS_PER_PARTICLE * np.sum(pu_np**2 + pv_np**2 + pw_np**2))
+    speed_sq = pu_np**2 + pv_np**2 + pw_np**2
+    speed_sq = np.where(np.isfinite(speed_sq), speed_sq, 0.0)
+    return float(0.5 * MASS_PER_PARTICLE * np.sum(speed_sq))
 
 
 @ti.kernel
@@ -1035,7 +1570,9 @@ def setup_liquid_pouring():
     print("[setup] Liquid Pouring 3D: inflow stream + obstacle")
 
     num_particles[None] = 0
-    for f in (pu, pv, pw, c0, c1, c2, c3, c4, c5, c6, c7, c8):
+    for f in (pu, pv, pw, c0, c1, c2, c3, c4, c5, c6, c7, c8,
+              q0, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11,
+              q12, q13, q14, q15, q16, q17):
         f.fill(0.0)
 
     obstacle = _make_obstacle_mask_3d()
@@ -1090,6 +1627,12 @@ def _init_block_kernel(x0: ti.i32, x1: ti.i32,
         c0[flat] = 0.0; c1[flat] = 0.0; c2[flat] = 0.0
         c3[flat] = 0.0; c4[flat] = 0.0; c5[flat] = 0.0
         c6[flat] = 0.0; c7[flat] = 0.0; c8[flat] = 0.0
+        q0[flat] = 0.0; q1[flat] = 0.0; q2[flat] = 0.0
+        q3[flat] = 0.0; q4[flat] = 0.0; q5[flat] = 0.0
+        q6[flat] = 0.0; q7[flat] = 0.0; q8[flat] = 0.0
+        q9[flat] = 0.0; q10[flat] = 0.0; q11[flat] = 0.0
+        q12[flat] = 0.0; q13[flat] = 0.0; q14[flat] = 0.0
+        q15[flat] = 0.0; q16[flat] = 0.0; q17[flat] = 0.0
     num_particles[None] = nx * ny * nz * ppc3
 
 
@@ -1147,6 +1690,12 @@ def _emit_kernel(x0: ti.f32, x1: ti.f32, y0: ti.f32, y1: ti.f32,
         c0[idx] = 0.0; c1[idx] = 0.0; c2[idx] = 0.0
         c3[idx] = 0.0; c4[idx] = 0.0; c5[idx] = 0.0
         c6[idx] = 0.0; c7[idx] = 0.0; c8[idx] = 0.0
+        q0[idx] = 0.0; q1[idx] = 0.0; q2[idx] = 0.0
+        q3[idx] = 0.0; q4[idx] = 0.0; q5[idx] = 0.0
+        q6[idx] = 0.0; q7[idx] = 0.0; q8[idx] = 0.0
+        q9[idx] = 0.0; q10[idx] = 0.0; q11[idx] = 0.0
+        q12[idx] = 0.0; q13[idx] = 0.0; q14[idx] = 0.0
+        q15[idx] = 0.0; q16[idx] = 0.0; q17[idx] = 0.0
     num_particles[None] = start + count
 
 
@@ -1186,22 +1735,29 @@ _GHOST_INTERVAL    = 5       # run every 5 frames
 _GHOST_HEIGHT_FRAC = 0.62
 
 
-def run_simulation(scene: str, ratio: float, output_dir: Path):
+def run_simulation(scene: str, ratio: float, output_dir: Path,
+                   method: str = DEFAULT_SOLVER_METHOD):
+    global SOLVER_METHOD
+    SOLVER_METHOD = method
     n_frames = SCENE_FRAMES.get(scene, NUM_FRAMES)
 
     print(f"\n{'='*65}")
-    print(f"[run] Scene: {scene}  |  flip_ratio: {ratio:.2f}"
+    print(f"[run] Scene: {scene}  |  method: {method}"
+          f"  |  ratio: {ratio:.2f}"
           f"  |  Frames: {n_frames}  |  Sub-steps: {SUBSTEPS}")
     print(f"[run] Grid: {NX}x{NY}x{NZ}  |  DX: {DX:.4f}"
           f"  |  PPC: {PPC}^3={PPC**3}/cell  |  dt: {DT:.6f}")
     print(f"[run] Output: {output_dir}")
     print(f"{'='*65}")
 
-    # Skip entirely if the compiled video already exists.
+    # Skip existing videos by default; Slurm reruns can opt into overwrite.
     mp4_path = output_dir / f"{scene}.mp4"
-    if mp4_path.exists():
+    force_render = os.environ.get("FLUIDSIM_FORCE_RENDER", "0") == "1"
+    if mp4_path.exists() and not force_render:
         print(f"[skip] {mp4_path} already exists — skipping this render.")
         return
+    if mp4_path.exists() and force_render:
+        print(f"[rerun] overwriting existing {mp4_path}")
 
     flip_ratio[None] = ratio
 
@@ -1325,27 +1881,41 @@ def _plot_energy(csv_path: Path, output_dir: Path):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python framework.py <scene> [flip_ratio]")
+        print("Usage: python framework.py <scene> [ratio] [method]")
         print("  scene: dam_break | liquid_pouring | all")
+        print("  method: flip | polypic")
         print("Examples:")
         print("  python framework.py dam_break")
         print("  python framework.py liquid_pouring 0.97")
-        print("  python framework.py all")
+        print("  python framework.py dam_break polypic")
+        print("  python framework.py all 0.97 polypic")
         sys.exit(1)
 
     scene_arg = sys.argv[1]
-    ratios = [float(sys.argv[2])] if len(sys.argv) >= 3 else FLIP_RATIOS
+    method = DEFAULT_SOLVER_METHOD
+    ratios = FLIP_RATIOS
+
+    for arg in sys.argv[2:]:
+        lowered = arg.lower()
+        if lowered in SOLVER_METHODS:
+            method = lowered
+        else:
+            ratios = [float(arg)]
+
+    if scene_arg not in ("dam_break", "liquid_pouring", "all"):
+        raise ValueError(f"Unknown scene: {scene_arg}")
+
     scenes = ["dam_break", "liquid_pouring"] if scene_arg == "all" else [scene_arg]
 
     print(f"[framework] 3D simulation  Grid: {NX}x{NY}x{NZ}")
-    print(f"[framework] Scenes: {scenes}  |  FLIP ratios: {ratios}")
+    print(f"[framework] Scenes: {scenes}  |  Method: {method}  |  Ratios: {ratios}")
 
     t0 = time.perf_counter()
     for scene in scenes:
         for ratio in ratios:
             ratio_str = f"ratio_{int(ratio * 1000):03d}"
-            out_dir = OUTPUT_BASE / "flip" / ratio_str / scene
-            run_simulation(scene, ratio, out_dir)
+            out_dir = OUTPUT_BASE / method / ratio_str / scene
+            run_simulation(scene, ratio, out_dir, method)
 
     elapsed = time.perf_counter() - t0
     print(f"\n[framework] Done! Total: {elapsed / 60:.1f} min")

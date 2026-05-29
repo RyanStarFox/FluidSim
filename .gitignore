@@ -2,3 +2,9 @@ __pycache__/
 .claude/
 output/test_render/
 output/flip/*/*/frames/
+.venv_fluidsim/
+.micromamba_fluidsim/
+.micromamba_root/
+slurm_logs/
+output/slurm_smoke/
+output/polypic/*/*/frames/
