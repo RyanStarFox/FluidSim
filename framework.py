@@ -52,6 +52,9 @@ DT = FRAME_DT / SUBSTEPS
 # Hard velocity ceiling: clamp |v| ≤ 0.9*DX/DT each substep (CFL safety).
 # DX=0.01, DT=1/120 → V_MAX = 0.9*0.01*120 = 1.08 m/s.
 V_MAX_PHYS = 0.9 * DX / DT
+APIC_VALUE_MAX = V_MAX_PHYS
+APIC_C_MAX = V_MAX_PHYS / DX
+APIC_C_DAMPING = 0.5
 NUM_FRAMES = 450
 PHYSICS_DURATION = NUM_FRAMES * FRAME_DT
 
@@ -630,6 +633,23 @@ def g2p_flip():
         c6[p] = 0.0; c7[p] = 0.0; c8[p] = 0.0
 
 
+@ti.func
+def _sanitize_limit(x: ti.f32, limit: ti.f32) -> ti.f32:
+    y = x
+    if y != y:
+        y = 0.0
+    if y > limit:
+        y = limit
+    if y < -limit:
+        y = -limit
+    return y
+
+
+@ti.func
+def _damped_limit(x: ti.f32, limit: ti.f32, damping: ti.f32) -> ti.f32:
+    return _sanitize_limit(x * damping, limit)
+
+
 @ti.kernel
 def p2g_apic():
     """Scatter particle velocity + affine momentum to MAC grid using trilinear weights."""
@@ -639,6 +659,8 @@ def p2g_apic():
     for i, j, k in u_saved: u_saved[i, j, k] = 0.0
     for i, j, k in v_saved: v_saved[i, j, k] = 0.0
     for i, j, k in w_saved: w_saved[i, j, k] = 0.0
+
+    val_lim = ti.cast(APIC_VALUE_MAX, ti.f32)
 
     for p in range(num_particles[None]):
         xp = px[p] * INV_DX
@@ -671,7 +693,7 @@ def p2g_apic():
                             (ti.cast(nk, ti.f32) + 0.5 - zp) * DX,
                         ])
                         g_v = vel_p + C @ dpos
-                        u[ni, nj, nk]       += wt * g_v.x
+                        u[ni, nj, nk]       += wt * _sanitize_limit(g_v.x, val_lim)
                         u_saved[ni, nj, nk] += wt
 
         # --- v-field: staggered at (i+0.5, j, k+0.5) ---
@@ -696,7 +718,7 @@ def p2g_apic():
                             (ti.cast(nk, ti.f32) + 0.5 - zp) * DX,
                         ])
                         g_v = vel_p + C @ dpos
-                        v[ni, nj, nk]       += wt * g_v.y
+                        v[ni, nj, nk]       += wt * _sanitize_limit(g_v.y, val_lim)
                         v_saved[ni, nj, nk] += wt
 
         # --- w-field: staggered at (i+0.5, j+0.5, k) ---
@@ -721,7 +743,7 @@ def p2g_apic():
                             (ti.cast(nk, ti.f32) - zp) * DX,
                         ])
                         g_v = vel_p + C @ dpos
-                        w[ni, nj, nk]       += wt * g_v.z
+                        w[ni, nj, nk]       += wt * _sanitize_limit(g_v.z, val_lim)
                         w_saved[ni, nj, nk] += wt
 
     for i, j, k in u:
@@ -738,6 +760,10 @@ def p2g_apic():
 @ti.kernel
 def g2p_apic():
     """Interpolate MAC grid velocities to particles and update affine matrices."""
+    v_lim = ti.cast(APIC_VALUE_MAX, ti.f32)
+    c_lim = ti.cast(APIC_C_MAX, ti.f32)
+    c_damp = ti.cast(APIC_C_DAMPING, ti.f32)
+
     for p in range(num_particles[None]):
         xp = px[p] * INV_DX
         yp = py[p] * INV_DX
@@ -854,10 +880,18 @@ def g2p_apic():
                         g_v = ti.Vector([0.0, 0.0, w[ni, nj, nk]])
                         new_C += 4.0 * INV_DX * INV_DX * wt * g_v.outer_product(dpos)
 
-        pu[p] = new_v.x; pv[p] = new_v.y; pw[p] = new_v.z
-        c0[p] = new_C[0, 0]; c1[p] = new_C[0, 1]; c2[p] = new_C[0, 2]
-        c3[p] = new_C[1, 0]; c4[p] = new_C[1, 1]; c5[p] = new_C[1, 2]
-        c6[p] = new_C[2, 0]; c7[p] = new_C[2, 1]; c8[p] = new_C[2, 2]
+        pu[p] = _sanitize_limit(new_v.x, v_lim)
+        pv[p] = _sanitize_limit(new_v.y, v_lim)
+        pw[p] = _sanitize_limit(new_v.z, v_lim)
+        c0[p] = _damped_limit(new_C[0, 0], c_lim, c_damp)
+        c1[p] = _damped_limit(new_C[0, 1], c_lim, c_damp)
+        c2[p] = _damped_limit(new_C[0, 2], c_lim, c_damp)
+        c3[p] = _damped_limit(new_C[1, 0], c_lim, c_damp)
+        c4[p] = _damped_limit(new_C[1, 1], c_lim, c_damp)
+        c5[p] = _damped_limit(new_C[1, 2], c_lim, c_damp)
+        c6[p] = _damped_limit(new_C[2, 0], c_lim, c_damp)
+        c7[p] = _damped_limit(new_C[2, 1], c_lim, c_damp)
+        c8[p] = _damped_limit(new_C[2, 2], c_lim, c_damp)
 
 
 # =============================================================================
@@ -872,6 +906,10 @@ def advect_particles():
     dom_z = ti.cast(NZ, ti.f32) * DX - 1e-5
     v_lim = ti.cast(V_MAX_PHYS, ti.f32)
     for p in range(num_particles[None]):
+        pu[p] = _sanitize_limit(pu[p], v_lim)
+        pv[p] = _sanitize_limit(pv[p], v_lim)
+        pw[p] = _sanitize_limit(pw[p], v_lim)
+
         # CFL velocity clamp: prevent particles from skipping multiple cells
         spd = ti.sqrt(pu[p]*pu[p] + pv[p]*pv[p] + pw[p]*pw[p])
         if spd > v_lim:
@@ -1194,7 +1232,9 @@ def compute_kinetic_energy() -> float:
     pu_np = pu.to_numpy()[:n]
     pv_np = pv.to_numpy()[:n]
     pw_np = pw.to_numpy()[:n]
-    return float(0.5 * MASS_PER_PARTICLE * np.sum(pu_np**2 + pv_np**2 + pw_np**2))
+    speed_sq = pu_np**2 + pv_np**2 + pw_np**2
+    speed_sq = np.where(np.isfinite(speed_sq), speed_sq, 0.0)
+    return float(0.5 * MASS_PER_PARTICLE * np.sum(speed_sq))
 
 
 @ti.kernel
