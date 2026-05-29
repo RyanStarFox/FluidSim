@@ -955,7 +955,6 @@ def remove_ghost_particles(max_height_frac: float = 0.55) -> int:
 # fluid_step() -- THE INTERFACE TEAMMATES IMPLEMENT
 # =============================================================================
 
-@ti.kernel
 def fluid_step():
     """Execute one sub-step of the 3D FLIP fluid simulation.
 
@@ -986,8 +985,6 @@ def fluid_step():
 
     Replace the body of this function for APIC (Student B) or PolyPIC (Student C).
     """
-
-    
 
     # APIC P2G: scatter particle velocity + affine momentum to MAC grid.
     p2g_apic()
@@ -1569,13 +1566,13 @@ def main():
     scenes = ["dam_break", "liquid_pouring"] if scene_arg == "all" else [scene_arg]
 
     print(f"[framework] 3D simulation  Grid: {NX}x{NY}x{NZ}")
-    print(f"[framework] Scenes: {scenes}  |  FLIP ratios: {ratios}")
+    print(f"[framework] Scenes: {scenes}  |  APIC ratios: {ratios}")
 
     t0 = time.perf_counter()
     for scene in scenes:
         for ratio in ratios:
             ratio_str = f"ratio_{int(ratio * 1000):03d}"
-            out_dir = OUTPUT_BASE / "flip" / ratio_str / scene
+            out_dir = OUTPUT_BASE / "apic" / ratio_str / scene
             run_simulation(scene, ratio, out_dir)
 
     elapsed = time.perf_counter() - t0
