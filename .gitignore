@@ -1,4 +1,11 @@
 __pycache__/
 .claude/
+slurm_logs/
+.venv_fluidsim/
+.micromamba_root/
+.micromamba_fluidsim/
 output/test_render/
 output/flip/*/*/frames/
+output/apic/*/*/frames/
+output/polypic/*/*/frames/
+output/slurm_smoke/
