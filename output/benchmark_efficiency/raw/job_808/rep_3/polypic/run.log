@@ -1,0 +1,87 @@
+[I 06/08/26 13:11:15.343 2385831] [misc.py:init@447] Following TI_ARCH setting up for arch=cuda
+[Taichi] version 1.7.4, llvm 15.0.4, commit b4b956fd, linux, python 3.10.20
+[Taichi] Starting on arch=cuda
+[framework] Taichi backend: Arch.cuda (from TI_ARCH)
+[benchmark] polypic scene=dam_break out=/mnt/home/jjian/workplace/qz/FluidSim/output/benchmark_efficiency/raw/job_808/rep_3/polypic/dam_break
+
+=================================================================
+[run] Scene: dam_break  |  method: polypic  |  ratio: 0.97  |  Frames: 300  |  Sub-steps: 2
+[run] Grid: 80x100x80  |  DX: 0.0100  |  PPC: 3^3=27/cell  |  dt: 0.008333
+[run] Output: /mnt/home/jjian/workplace/qz/FluidSim/output/benchmark_efficiency/raw/job_808/rep_3/polypic/dam_break
+=================================================================
+[setup] Dam Break 3D: block 13x75x78 cells -> 2053350 particles
+  Frame    0/300  t=0.02s  E_k=0.8074  dt=3716ms  N=2053350
+  Frame   10/300  t=0.18s  E_k=34.8671  dt=61ms  N=2053350
+  Frame   20/300  t=0.35s  E_k=34.5029  dt=50ms  N=2053350
+  Frame   30/300  t=0.52s  E_k=31.8389  dt=64ms  N=2053350
+  Frame   40/300  t=0.68s  E_k=27.6808  dt=46ms  N=2053350
+  Frame   50/300  t=0.85s  E_k=14.9122  dt=50ms  N=2053350
+  Frame   60/300  t=1.02s  E_k=3.1736  dt=51ms  N=2053350
+  Frame   70/300  t=1.18s  E_k=6.0235  dt=51ms  N=2053350
+  Frame   80/300  t=1.35s  E_k=8.8927  dt=47ms  N=2053350
+  Frame   90/300  t=1.52s  E_k=13.1733  dt=44ms  N=2053350
+  Frame  100/300  t=1.68s  E_k=5.3335  dt=43ms  N=2053350
+  Frame  110/300  t=1.85s  E_k=2.2440  dt=44ms  N=2053350
+  Frame  120/300  t=2.02s  E_k=2.8836  dt=46ms  N=2053350
+  Frame  130/300  t=2.18s  E_k=3.2085  dt=41ms  N=2053350
+  Frame  140/300  t=2.35s  E_k=3.1320  dt=38ms  N=2053350
+  Frame  150/300  t=2.52s  E_k=2.7840  dt=41ms  N=2053350
+  Frame  160/300  t=2.68s  E_k=0.4247  dt=41ms  N=2053350
+  Frame  170/300  t=2.85s  E_k=0.6446  dt=42ms  N=2053350
+  Frame  180/300  t=3.02s  E_k=0.4747  dt=39ms  N=2053350
+  Frame  190/300  t=3.18s  E_k=0.7817  dt=38ms  N=2053350
+  Frame  200/300  t=3.35s  E_k=1.0369  dt=34ms  N=2053350
+  Frame  210/300  t=3.52s  E_k=0.6146  dt=38ms  N=2053350
+  Frame  220/300  t=3.68s  E_k=0.1852  dt=38ms  N=2053350
+  Frame  230/300  t=3.85s  E_k=0.5030  dt=38ms  N=2053350
+  Frame  240/300  t=4.02s  E_k=0.3577  dt=36ms  N=2053350
+  Frame  250/300  t=4.18s  E_k=0.4755  dt=35ms  N=2053350
+  Frame  260/300  t=4.35s  E_k=0.5182  dt=35ms  N=2053350
+  Frame  270/300  t=4.52s  E_k=0.2307  dt=37ms  N=2053350
+  Frame  280/300  t=4.68s  E_k=0.1123  dt=36ms  N=2053350
+  Frame  290/300  t=4.85s  E_k=0.2790  dt=34ms  N=2053350
+
+[ffmpeg] Compiling dam_break video...
+[ffmpeg] Video saved: /mnt/home/jjian/workplace/qz/FluidSim/output/benchmark_efficiency/raw/job_808/rep_3/polypic/dam_break/dam_break.mp4
+[benchmark] polypic scene=liquid_pouring out=/mnt/home/jjian/workplace/qz/FluidSim/output/benchmark_efficiency/raw/job_808/rep_3/polypic/liquid_pouring
+
+=================================================================
+[run] Scene: liquid_pouring  |  method: polypic  |  ratio: 0.97  |  Frames: 300  |  Sub-steps: 2
+[run] Grid: 80x100x80  |  DX: 0.0100  |  PPC: 3^3=27/cell  |  dt: 0.008333
+[run] Output: /mnt/home/jjian/workplace/qz/FluidSim/output/benchmark_efficiency/raw/job_808/rep_3/polypic/liquid_pouring
+=================================================================
+[setup] Liquid Pouring 3D: inflow stream + obstacle
+[setup] Obstacle cells: 8000
+  Frame    0/300  t=0.02s  E_k=0.0432  dt=75ms  N=2000
+  Frame   10/300  t=0.18s  E_k=0.4752  dt=7ms  N=22000
+  Frame   20/300  t=0.35s  E_k=0.9072  dt=8ms  N=42000
+  Frame   30/300  t=0.52s  E_k=1.3299  dt=8ms  N=62000
+  Frame   40/300  t=0.68s  E_k=1.6129  dt=15ms  N=82000
+  Frame   50/300  t=0.85s  E_k=2.0126  dt=16ms  N=102000
+  Frame   60/300  t=1.02s  E_k=2.3180  dt=14ms  N=122000
+  Frame   70/300  t=1.18s  E_k=2.3863  dt=14ms  N=142000
+  Frame   80/300  t=1.35s  E_k=2.4383  dt=15ms  N=162000
+  Frame   90/300  t=1.52s  E_k=2.4757  dt=15ms  N=182000
+  Frame  100/300  t=1.68s  E_k=2.5000  dt=15ms  N=202000
+  Frame  110/300  t=1.85s  E_k=2.5100  dt=15ms  N=222000
+  Frame  120/300  t=2.02s  E_k=2.5129  dt=15ms  N=242000
+  Frame  130/300  t=2.18s  E_k=2.5230  dt=15ms  N=262000
+  Frame  140/300  t=2.35s  E_k=2.5353  dt=16ms  N=282000
+  Frame  150/300  t=2.52s  E_k=2.5420  dt=15ms  N=302000
+  Frame  160/300  t=2.68s  E_k=2.5468  dt=16ms  N=322000
+  Frame  170/300  t=2.85s  E_k=2.5583  dt=16ms  N=342000
+  Frame  180/300  t=3.02s  E_k=2.5647  dt=16ms  N=362000
+  Frame  190/300  t=3.18s  E_k=2.5728  dt=16ms  N=382000
+  Frame  200/300  t=3.35s  E_k=2.5742  dt=16ms  N=402000
+  Frame  210/300  t=3.52s  E_k=2.5755  dt=16ms  N=422000
+  Frame  220/300  t=3.68s  E_k=2.5897  dt=17ms  N=442000
+  Frame  230/300  t=3.85s  E_k=2.5845  dt=17ms  N=462000
+  Frame  240/300  t=4.02s  E_k=2.5818  dt=17ms  N=482000
+  Frame  250/300  t=4.18s  E_k=2.6123  dt=17ms  N=502000
+  Frame  260/300  t=4.35s  E_k=2.6184  dt=17ms  N=522000
+  Frame  270/300  t=4.52s  E_k=2.6207  dt=17ms  N=542000
+  Frame  280/300  t=4.68s  E_k=2.6042  dt=18ms  N=562000
+  Frame  290/300  t=4.85s  E_k=2.5865  dt=17ms  N=582000
+
+[ffmpeg] Compiling liquid_pouring video...
+[ffmpeg] Video saved: /mnt/home/jjian/workplace/qz/FluidSim/output/benchmark_efficiency/raw/job_808/rep_3/polypic/liquid_pouring/liquid_pouring.mp4

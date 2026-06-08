@@ -1,0 +1,10 @@
+job_id=808
+host=slurm-rtxp6000-142-029
+start_branch=final-option1-report
+current_commit=08ee311
+flip_commit=b1f84b6
+apic_commit=3edde91
+polypic_commit=0dc4cf1
+raw_dir=/mnt/home/jjian/workplace/qz/FluidSim/output/benchmark_efficiency/raw/job_808
+ti_arch=cuda
+NVIDIA RTX PRO 6000 Blackwell Server Edition, 580.126.20, 97887 MiB
