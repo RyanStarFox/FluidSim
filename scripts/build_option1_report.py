@@ -253,7 +253,7 @@ def write_markdown(summary, efficiency):
 
 ## Abstract
 
-This report presents an Option 1 experimental validation project for CS3511: Physical Simulation of Solids and Fluids. We compare three particle-grid transfer schemes, FLIP, APIC, and PolyPIC, under a shared Taichi-based simulation framework. The experiments use identical grid resolution, boundary handling, particle generation, rendering style, and two scene configurations: a 3D dam break and a liquid pouring setup. The comparison focuses on kinetic-energy evolution, qualitative visual behavior, reproducibility of generated artifacts, and a same-job simulation-only efficiency benchmark.
+This report compares three particle-grid transfer schemes, FLIP, APIC, and PolyPIC, under a shared Taichi-based simulation framework. The experiments use identical grid resolution, boundary handling, particle generation, rendering style, and two scene configurations: a 3D dam break and a liquid pouring setup. The comparison focuses on kinetic-energy evolution, qualitative visual behavior, reproducibility of generated artifacts, and a same-job simulation-only efficiency benchmark.
 
 ## Course Option and Scope
 
@@ -274,7 +274,7 @@ All algorithms were evaluated using the shared 3D grid framework in `framework.p
 
 FLIP uses an incremental grid velocity update to reduce dissipation relative to pure PIC. APIC augments particle state with a local affine velocity matrix, allowing first-order velocity variation to survive particle-grid transfers. PolyPIC extends this idea with higher-order local polynomial information, aiming to preserve richer local flow structure during transfers.
 
-Efficiency was benchmarked separately from the visual-output runs. FLIP, APIC, and PolyPIC were rerun inside the same Slurm job on an NVIDIA RTX PRO 6000 Blackwell Server Edition GPU with Taichi CUDA enabled. Rendering and video export were disabled, each method-scene pair was measured for three repetitions, and the first five frames were discarded to reduce JIT and initialization effects.
+Efficiency was benchmarked separately from the visual-output runs. FLIP, APIC, and PolyPIC were rerun inside Slurm job 808 on the `rtxp6000` partition with one NVIDIA RTX PRO 6000 Blackwell Server Edition GPU, 8 CPU cores, and 64 GB host memory. Taichi CUDA was enabled with `TI_ARCH=cuda`. Rendering and video export were disabled, each method-scene pair was measured for three repetitions, and the first five frames were discarded to reduce JIT and initialization effects.
 
 ## Results: Dam Break
 

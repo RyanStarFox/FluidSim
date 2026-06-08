@@ -20,14 +20,13 @@
 
 \author{
 \IEEEauthorblockN{Qinzhe Hu \quad Yan Shao \quad Baihan Deng}
-\IEEEauthorblockA{CS3511 Physical Simulation of Solids and Fluids}
 }
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-This paper presents an Option 1 experimental validation project comparing three particle--grid transfer schemes for fluid simulation: FLIP, APIC, and PolyPIC. All methods are evaluated under a shared Taichi-based framework with identical grid resolution, boundary handling, particle generation, rendering style, and scene definitions. The study uses two representative three-dimensional scenarios, dam break and liquid pouring, and evaluates the methods using kinetic-energy evolution, visual behavior, and a same-job simulation-only efficiency benchmark. The results show that PolyPIC provides the strongest integrated kinetic-energy retention in the dam-break scene, while APIC and PolyPIC produce smoother and lower-energy behavior than FLIP in the continuously driven pouring scene. The efficiency benchmark confirms the expected cost tradeoff: FLIP is fastest, APIC is slower due to affine transfer state, and PolyPIC is slowest due to higher-order polynomial transfer state.
+This paper compares three particle--grid transfer schemes for fluid simulation: FLIP, APIC, and PolyPIC. All methods are evaluated under a shared Taichi-based framework with identical grid resolution, boundary handling, particle generation, rendering style, and scene definitions. The study uses two representative three-dimensional scenarios, dam break and liquid pouring, and evaluates the methods using kinetic-energy evolution, visual behavior, and a same-job simulation-only efficiency benchmark. The results show that PolyPIC provides the strongest integrated kinetic-energy retention in the dam-break scene, while APIC and PolyPIC produce smoother and lower-energy behavior than FLIP in the continuously driven pouring scene. The efficiency benchmark confirms the expected cost tradeoff: FLIP is fastest, APIC is slower due to affine transfer state, and PolyPIC is slowest due to higher-order polynomial transfer state.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -120,7 +119,7 @@ and the reported energy AUC uses a trapezoidal approximation,
 \end{equation}
 We summarize each method using initial kinetic energy, peak kinetic energy, final kinetic energy, final-to-peak ratio, and the integral of kinetic energy over the simulated time interval.
 
-Runtime efficiency is measured separately from the visual-output runs. FLIP, APIC, and PolyPIC are rerun inside the same Slurm job on an NVIDIA RTX PRO 6000 Blackwell Server Edition GPU with Taichi CUDA enabled. Rendering and video export are disabled so that timing focuses on simulation work. Each method-scene pair is measured for three repetitions, and the first five frames are discarded to reduce JIT compilation and initialization effects. Relative speed is normalized against FLIP:
+Runtime efficiency is measured separately from the visual-output runs. FLIP, APIC, and PolyPIC are rerun inside the same Slurm job on the \texttt{rtxp6000} partition. The final benchmark uses Slurm job 808 with one NVIDIA RTX PRO 6000 Blackwell Server Edition GPU, 8 CPU cores, and 64 GB host memory; the GPU reports driver 580.126.20 and 97,887 MiB of device memory. Taichi CUDA is enabled with \texttt{TI\_ARCH=cuda}. Rendering and video export are disabled so that timing focuses on simulation work. Each method-scene pair is measured for three repetitions, and the first five frames are discarded to reduce JIT compilation and initialization effects. Relative speed is normalized against FLIP:
 \begin{equation}
 S_{\mathrm{method}}=\frac{T_{\mathrm{FLIP}}}{T_{\mathrm{method}}},
 \label{eq:speedup}
