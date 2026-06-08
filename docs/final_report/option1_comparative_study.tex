@@ -26,7 +26,7 @@
 \maketitle
 
 \begin{abstract}
-This paper compares three particle--grid transfer schemes for fluid simulation: FLIP, APIC, and PolyPIC. All methods are evaluated under a shared Taichi-based framework with identical grid resolution, boundary handling, particle generation, rendering style, and scene definitions. The study uses two representative three-dimensional scenarios, dam break and liquid pouring, and evaluates the methods using kinetic-energy evolution, visual behavior, and a same-job simulation-only efficiency benchmark. The results show that PolyPIC provides the strongest integrated kinetic-energy retention in the dam-break scene, while APIC and PolyPIC produce smoother and lower-energy behavior than FLIP in the continuously driven pouring scene. The efficiency benchmark confirms the expected cost tradeoff: FLIP is fastest, APIC is slower due to affine transfer state, and PolyPIC is slowest due to higher-order polynomial transfer state.
+This paper compares three particle--grid transfer schemes for fluid simulation: FLIP, APIC, and PolyPIC. All methods are evaluated under a shared Taichi-based framework with identical grid resolution, boundary handling, particle generation, rendering style, and scene definitions. The study uses two representative three-dimensional scenarios, dam break and liquid pouring, and evaluates the methods using kinetic-energy evolution, visual behavior, and a controlled runtime benchmark. The results show that PolyPIC provides the strongest integrated kinetic-energy retention in the dam-break scene, while APIC and PolyPIC produce smoother and lower-energy behavior than FLIP in the continuously driven pouring scene. The runtime measurements confirm the expected complexity ordering: FLIP is fastest, APIC is slower due to affine transfer state, and PolyPIC is slowest due to higher-order polynomial transfer state.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -35,25 +35,25 @@ fluid simulation, FLIP, APIC, PolyPIC, particle-in-cell, Taichi, experimental va
 
 \section{Introduction}
 
-Particle--grid hybrid methods are widely used for visually rich fluid simulation because they combine the low numerical diffusion of particle representations with the structured projection and force evaluation available on grids. However, different particle--grid transfer schemes can produce noticeably different dissipation, stability, and runtime behavior even when the outer simulator is otherwise identical.
+Particle--grid hybrid methods are widely used for visually rich fluid simulation because they combine Lagrangian advection with structured grid operations for forces, pressure projection, and boundary handling. This design is common in computer graphics liquid simulation, where stable grid solvers and particle/grid coupling are often combined to balance robustness and visual detail~\cite{foster2001liquids,bridson}. However, different particle--grid transfer schemes can produce noticeably different dissipation, stability, and runtime behavior even when the surrounding simulator is otherwise identical.
 
-This project follows the course Option 1 requirement: experimental validation of existing simulators. Rather than proposing a new fluid model, we build a controlled comparison pipeline for FLIP, APIC, and PolyPIC. The key design goal is to isolate the transfer scheme as much as possible. The three algorithms are run with the same grid, scenes, particle initialization, boundaries, frame count, and plotting pipeline. The final artifacts include energy CSV files, rendered videos, visual screenshots, comparison figures, an efficiency benchmark, and this LaTeX report.
+This study is an experimental validation rather than a new fluid model. The goal is to isolate the transfer scheme as much as possible. The three algorithms are run with the same grid, scenes, particle initialization, boundaries, frame count, and plotting pipeline. The reported outputs include energy CSV files, rendered videos, visual screenshots, comparison figures, and runtime summaries.
 
-The contribution is therefore practical and empirical. We ask three questions: (1) which method preserves kinetic energy most strongly in the shared scenarios; (2) whether the qualitative videos match the quantitative energy trends; and (3) how much runtime overhead APIC and PolyPIC introduce relative to baseline FLIP in this implementation.
+The evaluation addresses three questions: (1) which method preserves kinetic energy most strongly in the shared scenarios; (2) whether the qualitative videos are consistent with the quantitative energy trends; and (3) how much runtime overhead APIC and PolyPIC introduce relative to baseline FLIP in this implementation.
 
 \section{Related Work}
 
-The Particle-In-Cell (PIC) family transfers information between Lagrangian particles and an Eulerian grid. FLIP, introduced by Brackbill and Ruppel~\cite{brackbill1986flip}, reduces the excessive dissipation of pure PIC by transferring grid velocity increments back to particles. This makes FLIP attractive for energetic liquids, but it may also retain noisy velocity components.
+The Particle-In-Cell (PIC) family transfers information between Lagrangian particles and an Eulerian grid. FLIP, introduced by Brackbill and Ruppel~\cite{brackbill1986flip}, reduces the excessive dissipation of pure PIC by transferring grid velocity increments back to particles. Related graphics work has used particle/grid methods for granular and fluid-like materials~\cite{zhu2005sand}. FLIP is attractive for energetic liquids, but it may also retain noisy velocity components.
 
 APIC augments particles with locally affine velocity information~\cite{jiang2015apic}. Instead of storing only a constant velocity per particle, APIC carries an affine matrix that represents first-order local velocity variation. This improves angular momentum behavior and transfer consistency, at the cost of extra particle state and implementation complexity.
 
-PolyPIC generalizes this direction by representing higher-order polynomial local velocity functions on particles~\cite{fu2017polypic}. The method is motivated by preserving richer local flow structure during particle--grid transfers. In a compact course implementation, this additional expressiveness must be balanced against stability controls and runtime cost.
+PolyPIC generalizes this direction by representing higher-order polynomial local velocity functions on particles~\cite{fu2017polypic}. The method is motivated by preserving richer local flow structure during particle--grid transfers. In a compact implementation, this additional expressiveness must be balanced against stability controls and runtime cost.
 
 \section{Methods}
 
 \subsection{Shared Simulation Framework}
 
-All algorithms are evaluated using the shared three-dimensional Taichi framework in the repository. The common setup uses a grid resolution of $80 \times 100 \times 80$, cell size $\Delta x = 0.01$, two simulation substeps per rendered frame, and 300 output frames. The experiments use the \texttt{ratio\_970} convention for the FLIP/PIC blend parameter so that the branches can be compared under the same naming and output structure.
+All algorithms are evaluated using the shared three-dimensional Taichi framework in the repository. Taichi is designed for high-performance spatial computation and provides the CUDA backend used in these experiments~\cite{hu2019taichi}. The common setup uses a grid resolution of $80 \times 100 \times 80$, cell size $\Delta x = 0.01$, two simulation substeps per rendered frame, and 300 output frames. The experiments use the \texttt{ratio\_970} convention for the FLIP/PIC blend parameter so that the branches can be compared under the same naming and output structure.
 
 Two scenes are used. The dam-break scene initializes a dense water block near one side of the domain and observes the subsequent collapse and spread. The liquid-pouring scene initializes a stream-like incoming fluid source and therefore acts as a continuously driven test case.
 
@@ -101,7 +101,7 @@ PolyPIC stores higher-order local transfer information. A compact way to describ
 \phi_{\boldsymbol{\beta}}(\mathbf{x}-\mathbf{x}_p),
 \label{eq:polypic}
 \end{equation}
-where $\phi_{\boldsymbol{\beta}}$ are local polynomial basis functions and $\mathbf{a}_{p,\boldsymbol{\beta}}$ are particle-carried coefficients. APIC corresponds to preserving first-order local variation; PolyPIC extends the idea to richer polynomial structure. In this project, PolyPIC is evaluated as the high-order branch of the same framework and compared using identical output metrics.
+where $\phi_{\boldsymbol{\beta}}$ are local polynomial basis functions and $\mathbf{a}_{p,\boldsymbol{\beta}}$ are particle-carried coefficients. APIC corresponds to preserving first-order local variation; PolyPIC extends the idea to richer polynomial structure. In this evaluation, PolyPIC is treated as the high-order branch of the same framework and compared using identical output metrics.
 
 \subsection{Metrics and Efficiency Benchmark}
 
@@ -119,7 +119,7 @@ and the reported energy AUC uses a trapezoidal approximation,
 \end{equation}
 We summarize each method using initial kinetic energy, peak kinetic energy, final kinetic energy, final-to-peak ratio, and the integral of kinetic energy over the simulated time interval.
 
-Runtime efficiency is measured separately from the visual-output runs. FLIP, APIC, and PolyPIC are rerun inside the same Slurm job on the \texttt{rtxp6000} partition. The final benchmark uses Slurm job 808 with one NVIDIA RTX PRO 6000 Blackwell Server Edition GPU, 8 CPU cores, and 64 GB host memory; the GPU reports driver 580.126.20 and 97,887 MiB of device memory. Taichi CUDA is enabled with \texttt{TI\_ARCH=cuda}. Rendering and video export are disabled so that timing focuses on simulation work. Each method-scene pair is measured for three repetitions, and the first five frames are discarded to reduce JIT compilation and initialization effects. Relative speed is normalized against FLIP:
+Runtime efficiency is measured separately from the rendered runs. FLIP, APIC, and PolyPIC are evaluated in a single batch benchmark on the \texttt{rtxp6000} partition. The allocation uses one NVIDIA RTX PRO 6000 Blackwell Server Edition GPU, 8 CPU cores, and 64 GB host memory; the GPU reports driver 580.126.20 and 97,887 MiB of device memory. Taichi CUDA is enabled with \texttt{TI\_ARCH=cuda}. Rendering and video export are disabled so that timing focuses on simulation work. Each method-scene pair is measured for three repetitions, and the first five frames are discarded to reduce JIT compilation and initialization effects. Relative speed is normalized against FLIP:
 \begin{equation}
 S_{\mathrm{method}}=\frac{T_{\mathrm{FLIP}}}{T_{\mathrm{method}}},
 \label{eq:speedup}
@@ -191,7 +191,7 @@ PolyPIC & 2.6302 & 2.6197 & 11.4223 & 99.60\% \\
   \end{tabular}
 \end{table}
 
-In the liquid-pouring scene, FLIP produces substantially higher kinetic energy than APIC and PolyPIC. Because the scene is continuously driven, this should not be interpreted as a simple quality win. High kinetic energy can indicate reduced dissipation, but it can also reflect noisy transfer or excessive momentum retention. APIC and PolyPIC give lower and smoother energy curves, with PolyPIC slightly above APIC in both peak and integrated energy.
+In the liquid-pouring scene, FLIP produces substantially higher kinetic energy than APIC and PolyPIC. Because the scene is continuously driven, this should not be interpreted as directly superior behavior. High kinetic energy can indicate reduced dissipation, but it can also reflect noisy transfer or excessive momentum retention. APIC and PolyPIC give lower and smoother energy curves, with PolyPIC slightly above APIC in both peak and integrated energy.
 
 \begin{figure}[!t]
   \centering
@@ -230,7 +230,7 @@ In the liquid-pouring scene, FLIP produces substantially higher kinetic energy t
   \label{fig:visual}
 \end{figure*}
 
-The visual outputs provide a qualitative check against the CSV traces. The dam-break videos show broadly similar large-scale motion, but the energy summaries indicate that PolyPIC retains more total kinetic activity over time. The pouring screenshots support the quantitative observation that APIC and PolyPIC behave more restrainedly than FLIP in the driven source setup.
+The visual outputs provide a qualitative check against the CSV traces. The dam-break videos show broadly similar large-scale motion, but the energy summaries indicate that PolyPIC retains more total kinetic activity over time. The pouring screenshots are consistent with the lower APIC and PolyPIC kinetic-energy curves in the driven source setup.
 
 \FloatBarrier
 
@@ -291,39 +291,48 @@ PolyPIC & 14.988 & 16.972 & 20.15 & 0.60$\times$ \\
   \label{fig:speedup}
 \end{figure}
 
-The efficiency benchmark shows the expected cost ladder. FLIP is fastest in both scenes because it transfers only the baseline particle velocity state. APIC is slower because it carries and updates affine velocity information. PolyPIC is slowest because its higher-order local transfer stores and evaluates more particle-side information. Relative to FLIP, APIC reaches $0.79\times$ speed on dam break and $0.64\times$ speed on liquid pouring, while PolyPIC reaches $0.64\times$ and $0.60\times$, respectively.
+The efficiency benchmark follows the expected method-complexity ordering. FLIP is fastest in both scenes because it transfers only the baseline particle velocity state. APIC is slower because it carries and updates affine velocity information. PolyPIC is slowest because its higher-order local transfer stores and evaluates more particle-side information. Relative to FLIP, APIC reaches $0.79\times$ speed on dam break and $0.64\times$ speed on liquid pouring, while PolyPIC reaches $0.64\times$ and $0.60\times$, respectively.
 
 \FloatBarrier
 
 \section{Discussion}
 
-The experiments support four observations. First, a shared framework is essential: small changes in resolution, particle count, or boundary treatment can dominate the numerical differences between transfer schemes. Second, kinetic energy is informative but not sufficient on its own. Higher energy can indicate useful reduced dissipation, but it can also expose transfer noise or excessive momentum retention. Third, APIC and PolyPIC require more implementation care than baseline FLIP; APIC in particular needed affine-matrix limiting to avoid NaN growth in full runs. Fourth, richer transfer state has measurable runtime cost, as shown by the same-job benchmark.
+The experiments support four observations. First, a shared framework is essential: small changes in resolution, particle count, or boundary treatment can dominate the numerical differences between transfer schemes. Second, kinetic energy is informative but not sufficient on its own. Higher energy can indicate useful reduced dissipation, but it can also expose transfer noise or excessive momentum retention. Third, APIC and PolyPIC require more implementation care than baseline FLIP; APIC in particular needed affine-matrix limiting to avoid NaN growth in full runs. Fourth, richer transfer state has measurable runtime cost, as shown by the controlled benchmark.
 
 For dam break, PolyPIC gives the clearest energy-retention advantage by integrated kinetic energy. For liquid pouring, APIC and PolyPIC are smoother and more restrained than FLIP, with PolyPIC retaining slightly more energy than APIC while remaining stable. These observations are consistent with the motivation behind affine and polynomial transfers: additional local velocity information can improve transfer quality, but a compact implementation must still manage stability and throughput.
 
 \section{Limitations}
 
-This is a course-scale validation rather than a production simulator benchmark. The renderer is particle-based and not a high-quality surface reconstruction. The efficiency benchmark is simulation-only; rendering and video export are excluded, and the first five frames are discarded. This makes the timing comparison fairer than the original visual-output frame times, but it still measures this implementation, these scenes, and this hardware configuration rather than a universal algorithmic constant.
+This is a small-scale validation rather than a production simulator benchmark. The renderer is particle-based and does not include a high-quality surface reconstruction stage. The runtime benchmark is simulation-only; rendering and video export are excluded, and the first five frames are discarded. This makes the timing comparison more controlled than the original rendered frame times, but it still measures this implementation, these scenes, and this hardware configuration rather than a hardware-independent property of the algorithms.
 
 The experiment set is also intentionally narrow: it contains two scenes, one grid resolution, one particle-generation policy, and one FLIP/PIC blend ratio. The APIC implementation includes damping and finite-value guards for robustness, so its measured energy behavior is not an idealized APIC-only result. A larger study could sweep resolution, source strength, CFL settings, and transfer parameters.
 
-\section*{Acknowledgment of AI Assistance}
+\section*{Tool Use Statement}
 
-AI tools were used to assist with code repair, Slurm job orchestration, plotting, and report drafting. The numerical values in the tables and figures are computed from repository CSV outputs generated by simulation runs, not invented by language-model text.
+Large language models assisted with implementation debugging, batch-command preparation, plotting code, and language editing. All numerical values in the tables and figures are computed from the committed simulation outputs.
 
 \begin{thebibliography}{00}
 
 \bibitem{brackbill1986flip}
-J.~U. Brackbill and H.~M. Ruppel, ``FLIP: A method for adaptively zoned, particle-in-cell calculations of fluid flows in two dimensions,'' \emph{Journal of Computational Physics}, vol.~65, no.~2, pp. 314--343, 1986.
+J.~U. Brackbill and H.~M. Ruppel, ``FLIP: A method for adaptively zoned, particle-in-cell calculations of fluid flows in two dimensions,'' \emph{Journal of Computational Physics}, vol.~65, no.~2, pp. 314--343, 1986, doi:10.1016/0021-9991(86)90211-1.
+
+\bibitem{foster2001liquids}
+N.~Foster and R.~Fedkiw, ``Practical animation of liquids,'' in \emph{Proceedings of SIGGRAPH 2001}, pp. 23--30, 2001, doi:10.1145/383259.383261.
+
+\bibitem{zhu2005sand}
+Y.~Zhu and R.~Bridson, ``Animating sand as a fluid,'' \emph{ACM Transactions on Graphics}, vol.~24, no.~3, pp. 965--972, 2005, doi:10.1145/1073204.1073298.
 
 \bibitem{jiang2015apic}
-C.~Jiang, C.~Schroeder, A.~Selle, J.~Teran, and A.~Stomakhin, ``The affine particle-in-cell method,'' \emph{ACM Transactions on Graphics}, 2015.
+C.~Jiang, C.~Schroeder, A.~Selle, J.~Teran, and A.~Stomakhin, ``The affine particle-in-cell method,'' \emph{ACM Transactions on Graphics}, vol.~34, no.~4, Article 51, 2015, doi:10.1145/2766996.
 
 \bibitem{fu2017polypic}
-C.~Fu, Q.~Guo, T.~Gast, C.~Jiang, and J.~Teran, ``A polynomial particle-in-cell method,'' \emph{ACM Transactions on Graphics}, vol.~36, no.~6, Article 222, 2017.
+C.~Fu, Q.~Guo, T.~Gast, C.~Jiang, and J.~Teran, ``A polynomial particle-in-cell method,'' \emph{ACM Transactions on Graphics}, vol.~36, no.~6, Article 222, 2017, doi:10.1145/3130800.3130878.
+
+\bibitem{hu2019taichi}
+Y.~Hu, T.-M. Li, L.~Anderson, J.~Ragan-Kelley, and F.~Durand, ``Taichi: A language for high-performance computation on spatially sparse data structures,'' \emph{ACM Transactions on Graphics}, vol.~38, no.~6, Article 201, 2019, doi:10.1145/3355089.3356506.
 
 \bibitem{bridson}
-R.~Bridson, \emph{Fluid Simulation for Computer Graphics}. A K Peters/CRC Press.
+R.~Bridson, \emph{Fluid Simulation for Computer Graphics}, 2nd ed. CRC Press, 2015.
 
 \end{thebibliography}
 
