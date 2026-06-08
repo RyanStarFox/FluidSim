@@ -8,6 +8,7 @@ comparison figures and summary tables, and writes a Markdown plus PDF report.
 from __future__ import annotations
 
 import csv
+import shutil
 import textwrap
 from pathlib import Path
 
@@ -23,6 +24,7 @@ OUT = ROOT / "output" / "comparison"
 REPORT_DIR = ROOT / "docs" / "final_report"
 FIG_DIR = REPORT_DIR / "figures"
 SHOT_DIR = FIG_DIR / "screenshots"
+BENCHMARK_DIR = ROOT / "output" / "benchmark_efficiency"
 
 ALGORITHMS = {
     "FLIP": {
@@ -43,6 +45,11 @@ ALGORITHMS = {
 }
 SCENES = ["dam_break", "liquid_pouring"]
 SCENE_LABELS = {"dam_break": "Dam Break", "liquid_pouring": "Liquid Pouring"}
+EFFICIENCY_FIGURES = [
+    "dam_break_efficiency_ms_per_frame.png",
+    "liquid_pouring_efficiency_ms_per_frame.png",
+    "speedup_vs_flip.png",
+]
 
 
 def load_csv(path: Path) -> dict[str, np.ndarray]:
@@ -80,7 +87,6 @@ def write_summary(data: dict[str, dict[str, dict[str, np.ndarray]]]) -> list[dic
         for alg, d in by_alg.items():
             e = d["kinetic_energy"]
             t = d["time"]
-            ms = d["frame_time_ms"]
             row = {
                 "scene": scene,
                 "algorithm": alg,
@@ -90,7 +96,6 @@ def write_summary(data: dict[str, dict[str, dict[str, np.ndarray]]]) -> list[dic
                 "peak_energy": f"{e.max():.8f}",
                 "final_energy": f"{e[-1]:.8f}",
                 "energy_auc": f"{np.trapezoid(e, t):.8f}",
-                "mean_frame_time_ms_excluding_first": f"{ms[1:].mean():.6f}",
             }
             summary.append(row)
     with (OUT / "energy_summary.csv").open("w", newline="") as f:
@@ -162,22 +167,6 @@ def plot_energy(data):
     fig.savefig(FIG_DIR / "energy_auc_summary.png", dpi=220)
     plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(9.4, 4.8))
-    width = 0.24
-    x = np.arange(len(SCENES))
-    for offset, alg in zip([-width, 0, width], ALGORITHMS):
-        vals = [data[scene][alg]["frame_time_ms"][1:].mean() for scene in SCENES]
-        ax.bar(x + offset, vals, width=width, color=ALGORITHMS[alg]["color"], label=alg)
-    ax.set_xticks(x, [SCENE_LABELS[s] for s in SCENES])
-    ax.set_title("Mean Frame Time (first frame excluded)")
-    ax.set_ylabel("ms / frame")
-    ax.grid(True, axis="y", alpha=0.28)
-    ax.legend(frameon=False)
-    fig.tight_layout()
-    fig.savefig(OUT / "frame_time_summary.png", dpi=220)
-    fig.savefig(FIG_DIR / "frame_time_summary.png", dpi=220)
-    plt.close(fig)
-
 
 def make_montages():
     for scene in SCENES:
@@ -195,26 +184,91 @@ def make_montages():
         plt.close(fig)
 
 
+def load_efficiency_summary() -> list[dict[str, str]]:
+    path = BENCHMARK_DIR / "efficiency_summary.csv"
+    if not path.exists():
+        raise FileNotFoundError(path)
+    with path.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        raise ValueError(f"empty CSV: {path}")
+    return rows
+
+
+def copy_efficiency_figures():
+    for filename in EFFICIENCY_FIGURES:
+        src = BENCHMARK_DIR / filename
+        if not src.exists():
+            raise FileNotFoundError(src)
+        shutil.copy2(src, FIG_DIR / filename)
+
+
+def efficiency_rows(efficiency: list[dict[str, str]], scene: str) -> list[dict[str, str]]:
+    by_alg = {r["algorithm"]: r for r in efficiency if r["scene"] == scene}
+    return [by_alg[alg.lower()] for alg in ALGORITHMS]
+
+
+def efficiency_speedup(row: dict[str, str], rows: list[dict[str, str]]) -> float:
+    flip_mean = next(float(r["mean_ms_per_frame"]) for r in rows if r["algorithm"] == "flip")
+    return flip_mean / float(row["mean_ms_per_frame"])
+
+
+def efficiency_markdown_table(efficiency: list[dict[str, str]]) -> str:
+    lines = [
+        "| Scene | Algorithm | Reps | Mean ms/frame | Std | Median | P95 | M particles/s | Speedup vs FLIP |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for scene in SCENES:
+        rows = efficiency_rows(efficiency, scene)
+        for r in rows:
+            alg = r["algorithm"].upper() if r["algorithm"] != "polypic" else "PolyPIC"
+            lines.append(
+                f"| {SCENE_LABELS[scene]} | {alg} | {int(r['repetitions'])} | "
+                f"{float(r['mean_ms_per_frame']):.3f} | "
+                f"{float(r['std_of_run_means_ms']):.3f} | "
+                f"{float(r['median_ms_per_frame']):.3f} | "
+                f"{float(r['p95_ms_per_frame']):.3f} | "
+                f"{float(r['million_particles_per_s']):.2f} | "
+                f"{efficiency_speedup(r, rows):.2f}x |"
+            )
+    return "\n".join(lines)
+
+
+def efficiency_lines(efficiency: list[dict[str, str]], scene: str) -> list[str]:
+    rows = efficiency_rows(efficiency, scene)
+    lines = ["Algorithm  Mean ms  Std ms  P95 ms  Mpart/s  Speedup"]
+    for r in rows:
+        alg = r["algorithm"].upper() if r["algorithm"] != "polypic" else "PolyPIC"
+        lines.append(
+            f"{alg:<9} {float(r['mean_ms_per_frame']):>7.3f} "
+            f"{float(r['std_of_run_means_ms']):>7.3f} "
+            f"{float(r['p95_ms_per_frame']):>7.3f} "
+            f"{float(r['million_particles_per_s']):>8.2f} "
+            f"{efficiency_speedup(r, rows):>7.2f}x"
+        )
+    return lines
+
+
 def markdown_table(summary, scene):
     rows = [r for r in summary if r["scene"] == scene]
-    lines = ["| Algorithm | Rows | Finite | Initial E | Peak E | Final E | Energy AUC | Mean ms/frame* |",
-             "|---|---:|:---:|---:|---:|---:|---:|---:|"]
+    lines = ["| Algorithm | Rows | Finite | Initial E | Peak E | Final E | Energy AUC |",
+             "|---|---:|:---:|---:|---:|---:|---:|"]
     for r in rows:
         lines.append(
             f"| {r['algorithm']} | {r['rows']} | {r['finite']} | {float(r['initial_energy']):.4f} | "
             f"{float(r['peak_energy']):.4f} | {float(r['final_energy']):.4f} | "
-            f"{float(r['energy_auc']):.4f} | {float(r['mean_frame_time_ms_excluding_first']):.3f} |"
+            f"{float(r['energy_auc']):.4f} |"
         )
     return "\n".join(lines)
 
 
-def write_markdown(summary):
+def write_markdown(summary, efficiency):
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     md = f"""# Comparative Study of FLIP, APIC, and PolyPIC Transfers for Particle-Grid Fluid Simulation
 
 ## Abstract
 
-This report presents an Option 1 experimental validation project for CS3511: Physical Simulation of Solids and Fluids. We compare three particle-grid transfer schemes, FLIP, APIC, and PolyPIC, under a shared Taichi-based simulation framework. The experiments use identical grid resolution, boundary handling, particle generation, rendering style, and two scene configurations: a 3D dam break and a liquid pouring setup. The comparison focuses on kinetic-energy evolution, qualitative visual behavior, and reproducibility of generated artifacts.
+This report presents an Option 1 experimental validation project for CS3511: Physical Simulation of Solids and Fluids. We compare three particle-grid transfer schemes, FLIP, APIC, and PolyPIC, under a shared Taichi-based simulation framework. The experiments use identical grid resolution, boundary handling, particle generation, rendering style, and two scene configurations: a 3D dam break and a liquid pouring setup. The comparison focuses on kinetic-energy evolution, qualitative visual behavior, reproducibility of generated artifacts, and a same-job simulation-only efficiency benchmark.
 
 ## Course Option and Scope
 
@@ -235,13 +289,13 @@ All algorithms were evaluated using the shared 3D grid framework in `framework.p
 
 FLIP uses an incremental grid velocity update to reduce dissipation relative to pure PIC. APIC augments particle state with a local affine velocity matrix, allowing first-order velocity variation to survive particle-grid transfers. PolyPIC extends this idea with higher-order local polynomial information, aiming to preserve richer local flow structure during transfers.
 
+Efficiency was benchmarked separately from the visual-output runs. FLIP, APIC, and PolyPIC were rerun inside the same Slurm job on an NVIDIA RTX PRO 6000 Blackwell Server Edition GPU with Taichi CUDA enabled. Rendering and video export were disabled, each method-scene pair was measured for three repetitions, and the first five frames were discarded to reduce JIT and initialization effects.
+
 ## Results: Dam Break
 
 ![Dam break kinetic energy](figures/dam_break_kinetic_energy.png)
 
 {markdown_table(summary, 'dam_break')}
-
-*The first frame includes initialization and compilation overhead, so the timing column excludes frame 0.*
 
 In the dam-break scene, all three methods remain finite for the full 300-frame run. PolyPIC has the largest integrated kinetic energy, suggesting the least overall dissipation in this test. APIC reaches the highest peak energy but, because the APIC branch was stabilized with finite-value guards and affine damping, it dissipates more strongly near the end of the run.
 
@@ -261,19 +315,31 @@ In the liquid-pouring scene, FLIP produces substantially higher kinetic energy t
 
 The video outputs are stored with the corresponding algorithm results. The screenshots above were extracted at `t = 2.5s` from the committed MP4 files.
 
+## Efficiency Benchmark
+
+![Dam break efficiency](figures/dam_break_efficiency_ms_per_frame.png)
+
+![Liquid pouring efficiency](figures/liquid_pouring_efficiency_ms_per_frame.png)
+
+![Relative speedup](figures/speedup_vs_flip.png)
+
+{efficiency_markdown_table(efficiency)}
+
+The efficiency benchmark shows the expected cost ladder. FLIP is the fastest method in both scenes because it transfers only the baseline particle velocity state. APIC is slower because it carries and updates an affine velocity matrix. PolyPIC is slowest because its higher-order local transfer stores and evaluates more particle-side information. Relative to FLIP, APIC reaches `0.79x` speed on dam break and `0.64x` speed on liquid pouring, while PolyPIC reaches `0.64x` and `0.60x`, respectively.
+
 ## Discussion
 
-The experiments support three practical observations. First, a shared framework is necessary: small changes in grid resolution, particle count, or boundary treatment can dominate the numerical differences between transfer schemes. Second, kinetic energy is informative but not sufficient on its own. Higher energy can mean useful reduced dissipation, but it can also expose noisy transfer or excessive momentum retention. Third, APIC and PolyPIC require more care than baseline FLIP. APIC in particular needed affine-matrix limiting to avoid NaN growth in the full run.
+The experiments support four practical observations. First, a shared framework is necessary: small changes in grid resolution, particle count, or boundary treatment can dominate the numerical differences between transfer schemes. Second, kinetic energy is informative but not sufficient on its own. Higher energy can mean useful reduced dissipation, but it can also expose noisy transfer or excessive momentum retention. Third, APIC and PolyPIC require more care than baseline FLIP. APIC in particular needed affine-matrix limiting to avoid NaN growth in the full run. Fourth, transfer accuracy has a measurable cost: the richer APIC and PolyPIC particle state reduces throughput in the same-job benchmark.
 
 For the dam-break case, PolyPIC gives the clearest energy-retention advantage by integrated kinetic energy. For the pouring case, APIC and PolyPIC are more restrained than FLIP; PolyPIC retains slightly more energy than APIC while remaining stable. These results are consistent with the motivation behind affine and polynomial particle-grid transfers: additional local velocity information can improve transfer quality, but stability controls remain important in a compact course implementation.
 
 ## Limitations
 
-The comparison is a course-scale validation rather than a full benchmark. The rendering is particle-based and not a high-quality surface reconstruction. Timing is reported but should be treated cautiously because the FLIP data were produced in a different run context from the APIC/PolyPIC reruns. The APIC implementation also includes damping for robustness, which changes its energy behavior relative to an ideal APIC formulation.
+The comparison is a course-scale validation rather than a full production benchmark. The rendering is particle-based and not a high-quality surface reconstruction. The efficiency benchmark is simulation-only: rendering and video export are excluded, and the first five frames are discarded. This makes the timing comparison fairer than the original visual-output frame times, but it still measures this implementation and hardware configuration rather than a universal algorithmic constant. The APIC implementation also includes damping for robustness, which changes its energy behavior relative to an ideal APIC formulation.
 
 ## Conclusion
 
-The final pipeline successfully produces reproducible outputs for FLIP, APIC, and PolyPIC under common scenes. PolyPIC shows the strongest energy retention in the dam-break test, while APIC and PolyPIC show smoother, lower-energy behavior in the pouring scene than the baseline FLIP run. The project therefore satisfies the Option 1 goal: experimental validation and comparison of existing simulator techniques through controlled runs, quantitative plots, videos, and a documented analysis pipeline.
+The final pipeline successfully produces reproducible outputs for FLIP, APIC, and PolyPIC under common scenes. PolyPIC shows the strongest energy retention in the dam-break test, while APIC and PolyPIC show smoother, lower-energy behavior in the pouring scene than the baseline FLIP run. The efficiency benchmark adds the complementary tradeoff: FLIP is fastest, APIC is moderately slower, and PolyPIC is slowest because it preserves richer transfer state. The project therefore satisfies the Option 1 goal: experimental validation and comparison of existing simulator techniques through controlled runs, quantitative plots, videos, and a documented analysis pipeline.
 
 ## Artifact Index
 
@@ -283,6 +349,12 @@ The final pipeline successfully produces reproducible outputs for FLIP, APIC, an
 - `output/comparison/dam_break_kinetic_energy.png`
 - `output/comparison/liquid_pouring_kinetic_energy.png`
 - `output/comparison/energy_auc_summary.png`
+- `output/benchmark_efficiency/efficiency_runs.csv`
+- `output/benchmark_efficiency/efficiency_summary.csv`
+- `output/benchmark_efficiency/dam_break_efficiency_ms_per_frame.png`
+- `output/benchmark_efficiency/liquid_pouring_efficiency_ms_per_frame.png`
+- `output/benchmark_efficiency/speedup_vs_flip.png`
+- `docs/final_report/efficiency_benchmark.md`
 - `docs/final_report/option1_comparative_study.pdf`
 - `docs/final_report/option1_comparative_study.md`
 
@@ -350,15 +422,15 @@ def summary_lines(summary, scene):
     return lines
 
 
-def write_pdf(summary):
+def write_pdf(summary, efficiency):
     path = REPORT_DIR / "option1_comparative_study.pdf"
     with PdfPages(path) as pdf:
         add_text_page(pdf, "Comparative Study of FLIP, APIC, and PolyPIC", """
 This Option 1 project validates and compares three existing particle-grid transfer schemes for fluid simulation: FLIP, APIC, and PolyPIC. The experiments are run in a shared Taichi framework with fixed grid resolution, particle initialization, boundary treatment, and rendering settings.
 
-The objective is to produce a controlled comparison rather than a new simulator. The main outputs are energy CSV files, videos, visual screenshots, comparison plots, and this report.
+The objective is to produce a controlled comparison rather than a new simulator. The main outputs are energy CSV files, videos, visual screenshots, comparison plots, an efficiency benchmark, and this report.
 
-Main finding: PolyPIC has the strongest integrated kinetic-energy retention in the dam-break test. In the liquid-pouring test, FLIP produces much higher kinetic energy, which is treated as possible momentum over-retention or transfer noise rather than an automatic quality improvement. APIC and PolyPIC are more restrained and stable in that setup.
+Main finding: PolyPIC has the strongest integrated kinetic-energy retention in the dam-break test. In the liquid-pouring test, FLIP produces much higher kinetic energy, which is treated as possible momentum over-retention or transfer noise rather than an automatic quality improvement. The efficiency benchmark shows the complementary cost tradeoff: FLIP is fastest, APIC is slower, and PolyPIC is slowest.
 """, footer="CS3511 final project, Option 1 experimental validation")
         add_text_page(pdf, "Course Option, Related Work, and Setup", """
 The course logistics slides describe Option 1 as experimental validation of existing simulators and require the final report to include introduction, related work, methods, results, and discussion. This report follows that structure.
@@ -368,6 +440,8 @@ Related work: FLIP is a low-dissipation particle-in-cell variant introduced by B
 Common setup: 80 x 100 x 80 grid, DX = 0.01, two simulation substeps per rendered frame, 300 output frames, and ratio_970 for the FLIP/PIC blending convention. Two scenes are evaluated: a dense 3D dam break and a liquid pouring configuration.
 
 All CSV outputs are checked for finite kinetic energy values. The APIC and PolyPIC full runs each completed 300 frames for both scenes. The FLIP ratio_970 outputs from the existing main branch are used as the baseline.
+
+Efficiency setup: FLIP, APIC, and PolyPIC were rerun in the same Slurm job on an NVIDIA RTX PRO 6000 Blackwell Server Edition GPU. Rendering and video export were disabled, three repetitions were collected per method-scene pair, and the first five frames were discarded.
 """)
         add_text_page(pdf, "Methods", """
 FLIP transfers particle velocity changes from the grid back to particles, reducing the dissipation of pure PIC but potentially retaining noisy velocity components.
@@ -379,11 +453,14 @@ PolyPIC generalizes the transfer by carrying higher-order polynomial information
         add_figure_page(pdf, "Dam Break: Kinetic Energy", FIG_DIR / "dam_break_kinetic_energy.png", "All three methods remain finite for 300 frames. PolyPIC has the largest integrated kinetic energy in this scene, while APIC reaches the highest peak but dissipates more strongly near the end after stabilization.", summary_lines(summary, "dam_break"))
         add_figure_page(pdf, "Liquid Pouring: Kinetic Energy", FIG_DIR / "liquid_pouring_kinetic_energy.png", "FLIP produces substantially higher kinetic energy in the pouring scene. Because the scene is continuously driven, higher energy is interpreted cautiously: it can indicate reduced dissipation, but also numerical noise or excessive momentum retention.", summary_lines(summary, "liquid_pouring"))
         add_figure_page(pdf, "Visual Comparison", FIG_DIR / "dam_break_visual_comparison.png", "Screenshots extracted at t = 2.5s from the committed dam-break videos. The videos themselves are stored under each algorithm's output directory.")
-        add_figure_page(pdf, "Integrated Energy and Timing", FIG_DIR / "energy_auc_summary.png", "Integrated kinetic energy summarizes the total kinetic activity over the five-second run. Timing is included as secondary evidence only, because the baseline FLIP outputs were generated in a different run context from the APIC and PolyPIC reruns.")
+        add_figure_page(pdf, "Integrated Energy", FIG_DIR / "energy_auc_summary.png", "Integrated kinetic energy summarizes the total kinetic activity over the five-second run. This plot is kept separate from the efficiency benchmark so that energy behavior and runtime cost are not mixed.")
+        add_figure_page(pdf, "Efficiency: Dam Break", FIG_DIR / "dam_break_efficiency_ms_per_frame.png", "Simulation-only benchmark for the dam-break scene. FLIP is fastest, APIC is moderately slower, and PolyPIC is slowest because it evaluates richer transfer state.", efficiency_lines(efficiency, "dam_break"))
+        add_figure_page(pdf, "Efficiency: Liquid Pouring", FIG_DIR / "liquid_pouring_efficiency_ms_per_frame.png", "Simulation-only benchmark for the liquid-pouring scene. The same cost ordering appears, with APIC and PolyPIC running at roughly two thirds of FLIP throughput.", efficiency_lines(efficiency, "liquid_pouring"))
+        add_figure_page(pdf, "Efficiency: Relative Speedup", FIG_DIR / "speedup_vs_flip.png", "Relative speedup is normalized against FLIP within each scene. Values below 1.0 indicate slower runtime than the FLIP baseline.")
         add_text_page(pdf, "Discussion, Limitations, and AI Usage", """
-Discussion: The experiments show that a shared framework is essential for meaningful comparison. PolyPIC gives the clearest energy-retention advantage in the dam-break scene. APIC and PolyPIC are smoother than FLIP in liquid pouring, where FLIP's higher kinetic energy should not be read as an unqualified improvement.
+Discussion: The experiments show that a shared framework is essential for meaningful comparison. PolyPIC gives the clearest energy-retention advantage in the dam-break scene. APIC and PolyPIC are smoother than FLIP in liquid pouring, where FLIP's higher kinetic energy should not be read as an unqualified improvement. The efficiency benchmark confirms the expected tradeoff: richer transfer state improves what can be preserved, but reduces throughput.
 
-Limitations: The renderer is particle-based and not a production surface reconstruction. Timing numbers are not a strict benchmark because run contexts differ. The APIC implementation uses damping for robustness, so it is not an idealized APIC-only measurement.
+Limitations: The renderer is particle-based and not a production surface reconstruction. The timing benchmark excludes rendering and video export, so it measures simulation throughput rather than full end-to-end wall time. The APIC implementation uses damping for robustness, so it is not an idealized APIC-only measurement.
 
 AI tool usage: AI assistance was used for code repair, Slurm orchestration, plotting, and report drafting. The numerical values in the tables and plots come from repository CSV files generated by simulation runs, not from language-model invention.
 
@@ -399,8 +476,10 @@ def main():
     summary = write_summary(data)
     plot_energy(data)
     make_montages()
-    write_markdown(summary)
-    write_pdf(summary)
+    efficiency = load_efficiency_summary()
+    copy_efficiency_figures()
+    write_markdown(summary, efficiency)
+    write_pdf(summary, efficiency)
     print("[ok] Wrote comparison artifacts to", OUT)
     print("[ok] Wrote report to", REPORT_DIR)
 
