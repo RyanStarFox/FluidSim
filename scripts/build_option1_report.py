@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import csv
 import shutil
-import textwrap
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
+
+from build_latex_report import build_latex_report
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "output" / "comparison"
@@ -234,21 +234,6 @@ def efficiency_markdown_table(efficiency: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
-def efficiency_lines(efficiency: list[dict[str, str]], scene: str) -> list[str]:
-    rows = efficiency_rows(efficiency, scene)
-    lines = ["Algorithm  Mean ms  Std ms  P95 ms  Mpart/s  Speedup"]
-    for r in rows:
-        alg = r["algorithm"].upper() if r["algorithm"] != "polypic" else "PolyPIC"
-        lines.append(
-            f"{alg:<9} {float(r['mean_ms_per_frame']):>7.3f} "
-            f"{float(r['std_of_run_means_ms']):>7.3f} "
-            f"{float(r['p95_ms_per_frame']):>7.3f} "
-            f"{float(r['million_particles_per_s']):>8.2f} "
-            f"{efficiency_speedup(r, rows):>7.2f}x"
-        )
-    return lines
-
-
 def markdown_table(summary, scene):
     rows = [r for r in summary if r["scene"] == scene]
     lines = ["| Algorithm | Rows | Finite | Initial E | Peak E | Final E | Energy AUC |",
@@ -355,6 +340,7 @@ The final pipeline successfully produces reproducible outputs for FLIP, APIC, an
 - `output/benchmark_efficiency/liquid_pouring_efficiency_ms_per_frame.png`
 - `output/benchmark_efficiency/speedup_vs_flip.png`
 - `docs/final_report/efficiency_benchmark.md`
+- `docs/final_report/option1_comparative_study.tex`
 - `docs/final_report/option1_comparative_study.pdf`
 - `docs/final_report/option1_comparative_study.md`
 
@@ -372,102 +358,6 @@ AI tools were used to assist with code repair, Slurm job orchestration, data plo
     (REPORT_DIR / "option1_comparative_study.md").write_text(md)
 
 
-def add_text_page(pdf, title, body, footer=None, fontsize=10):
-    fig = plt.figure(figsize=(8.27, 11.69))
-    fig.patch.set_facecolor("white")
-    plt.axis("off")
-    fig.text(0.08, 0.93, title, fontsize=17, fontweight="bold", va="top")
-    wrapped = []
-    for para in body.split("\n"):
-        if not para.strip():
-            wrapped.append("")
-        else:
-            wrapped.extend(textwrap.wrap(para, 96))
-    y = 0.87
-    for line in wrapped:
-        fig.text(0.08, y, line, fontsize=fontsize, va="top", family="DejaVu Sans")
-        y -= 0.026
-        if y < 0.08:
-            break
-    if footer:
-        fig.text(0.08, 0.04, footer, fontsize=8, color="#555555")
-    pdf.savefig(fig, bbox_inches="tight")
-    plt.close(fig)
-
-
-def add_figure_page(pdf, title, image_path, caption, table_lines=None):
-    fig = plt.figure(figsize=(8.27, 11.69))
-    plt.axis("off")
-    fig.text(0.08, 0.94, title, fontsize=16, fontweight="bold", va="top")
-    img = mpimg.imread(image_path)
-    ax = fig.add_axes([0.09, 0.43, 0.82, 0.43])
-    ax.imshow(img)
-    ax.axis("off")
-    fig.text(0.08, 0.39, textwrap.fill(caption, 92), fontsize=9.5, va="top")
-    if table_lines:
-        y = 0.29
-        fig.text(0.08, y, "Summary statistics", fontsize=10, fontweight="bold")
-        y -= 0.028
-        for line in table_lines:
-            fig.text(0.08, y, line, fontsize=8.4, family="DejaVu Sans Mono")
-            y -= 0.024
-    pdf.savefig(fig, bbox_inches="tight")
-    plt.close(fig)
-
-
-def summary_lines(summary, scene):
-    lines = ["Algorithm  Rows  Finite  InitialE   PeakE    FinalE   AUC"]
-    for r in [x for x in summary if x["scene"] == scene]:
-        lines.append(f"{r['algorithm']:<9} {r['rows']:>4}  {r['finite']:<6}  {float(r['initial_energy']):>8.4f} {float(r['peak_energy']):>8.4f} {float(r['final_energy']):>8.4f} {float(r['energy_auc']):>8.4f}")
-    return lines
-
-
-def write_pdf(summary, efficiency):
-    path = REPORT_DIR / "option1_comparative_study.pdf"
-    with PdfPages(path) as pdf:
-        add_text_page(pdf, "Comparative Study of FLIP, APIC, and PolyPIC", """
-This Option 1 project validates and compares three existing particle-grid transfer schemes for fluid simulation: FLIP, APIC, and PolyPIC. The experiments are run in a shared Taichi framework with fixed grid resolution, particle initialization, boundary treatment, and rendering settings.
-
-The objective is to produce a controlled comparison rather than a new simulator. The main outputs are energy CSV files, videos, visual screenshots, comparison plots, an efficiency benchmark, and this report.
-
-Main finding: PolyPIC has the strongest integrated kinetic-energy retention in the dam-break test. In the liquid-pouring test, FLIP produces much higher kinetic energy, which is treated as possible momentum over-retention or transfer noise rather than an automatic quality improvement. The efficiency benchmark shows the complementary cost tradeoff: FLIP is fastest, APIC is slower, and PolyPIC is slowest.
-""", footer="CS3511 final project, Option 1 experimental validation")
-        add_text_page(pdf, "Course Option, Related Work, and Setup", """
-The course logistics slides describe Option 1 as experimental validation of existing simulators and require the final report to include introduction, related work, methods, results, and discussion. This report follows that structure.
-
-Related work: FLIP is a low-dissipation particle-in-cell variant introduced by Brackbill and Ruppel. APIC improves transfer accuracy by augmenting particles with locally affine velocity information. PolyPIC extends the idea to richer local polynomial functions. Our comparison follows this progression from baseline FLIP to affine and polynomial transfers.
-
-Common setup: 80 x 100 x 80 grid, DX = 0.01, two simulation substeps per rendered frame, 300 output frames, and ratio_970 for the FLIP/PIC blending convention. Two scenes are evaluated: a dense 3D dam break and a liquid pouring configuration.
-
-All CSV outputs are checked for finite kinetic energy values. The APIC and PolyPIC full runs each completed 300 frames for both scenes. The FLIP ratio_970 outputs from the existing main branch are used as the baseline.
-
-Efficiency setup: FLIP, APIC, and PolyPIC were rerun in the same Slurm job on an NVIDIA RTX PRO 6000 Blackwell Server Edition GPU. Rendering and video export were disabled, three repetitions were collected per method-scene pair, and the first five frames were discarded.
-""")
-        add_text_page(pdf, "Methods", """
-FLIP transfers particle velocity changes from the grid back to particles, reducing the dissipation of pure PIC but potentially retaining noisy velocity components.
-
-APIC stores a local affine matrix per particle. The P2G transfer evaluates a local velocity model at grid faces, and the G2P transfer reconstructs particle velocity and affine state from the projected grid velocity field. The implementation used here includes finite-value guards and affine damping to keep the full 300-frame runs stable.
-
-PolyPIC generalizes the transfer by carrying higher-order polynomial information. In principle, this can preserve richer local velocity variation than APIC, though it also increases implementation complexity.
-""")
-        add_figure_page(pdf, "Dam Break: Kinetic Energy", FIG_DIR / "dam_break_kinetic_energy.png", "All three methods remain finite for 300 frames. PolyPIC has the largest integrated kinetic energy in this scene, while APIC reaches the highest peak but dissipates more strongly near the end after stabilization.", summary_lines(summary, "dam_break"))
-        add_figure_page(pdf, "Liquid Pouring: Kinetic Energy", FIG_DIR / "liquid_pouring_kinetic_energy.png", "FLIP produces substantially higher kinetic energy in the pouring scene. Because the scene is continuously driven, higher energy is interpreted cautiously: it can indicate reduced dissipation, but also numerical noise or excessive momentum retention.", summary_lines(summary, "liquid_pouring"))
-        add_figure_page(pdf, "Visual Comparison", FIG_DIR / "dam_break_visual_comparison.png", "Screenshots extracted at t = 2.5s from the committed dam-break videos. The videos themselves are stored under each algorithm's output directory.")
-        add_figure_page(pdf, "Integrated Energy", FIG_DIR / "energy_auc_summary.png", "Integrated kinetic energy summarizes the total kinetic activity over the five-second run. This plot is kept separate from the efficiency benchmark so that energy behavior and runtime cost are not mixed.")
-        add_figure_page(pdf, "Efficiency: Dam Break", FIG_DIR / "dam_break_efficiency_ms_per_frame.png", "Simulation-only benchmark for the dam-break scene. FLIP is fastest, APIC is moderately slower, and PolyPIC is slowest because it evaluates richer transfer state.", efficiency_lines(efficiency, "dam_break"))
-        add_figure_page(pdf, "Efficiency: Liquid Pouring", FIG_DIR / "liquid_pouring_efficiency_ms_per_frame.png", "Simulation-only benchmark for the liquid-pouring scene. The same cost ordering appears, with APIC and PolyPIC running at roughly two thirds of FLIP throughput.", efficiency_lines(efficiency, "liquid_pouring"))
-        add_figure_page(pdf, "Efficiency: Relative Speedup", FIG_DIR / "speedup_vs_flip.png", "Relative speedup is normalized against FLIP within each scene. Values below 1.0 indicate slower runtime than the FLIP baseline.")
-        add_text_page(pdf, "Discussion, Limitations, and AI Usage", """
-Discussion: The experiments show that a shared framework is essential for meaningful comparison. PolyPIC gives the clearest energy-retention advantage in the dam-break scene. APIC and PolyPIC are smoother than FLIP in liquid pouring, where FLIP's higher kinetic energy should not be read as an unqualified improvement. The efficiency benchmark confirms the expected tradeoff: richer transfer state improves what can be preserved, but reduces throughput.
-
-Limitations: The renderer is particle-based and not a production surface reconstruction. The timing benchmark excludes rendering and video export, so it measures simulation throughput rather than full end-to-end wall time. The APIC implementation uses damping for robustness, so it is not an idealized APIC-only measurement.
-
-AI tool usage: AI assistance was used for code repair, Slurm orchestration, plotting, and report drafting. The numerical values in the tables and plots come from repository CSV files generated by simulation runs, not from language-model invention.
-
-References: Brackbill and Ruppel 1986, doi:10.1016/0021-9991(86)90211-1; Jiang et al. 2015; Fu et al. 2017, doi:10.1145/3130800.3130878; Bridson, Fluid Simulation for Computer Graphics.
-""")
-
-
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -479,7 +369,7 @@ def main():
     efficiency = load_efficiency_summary()
     copy_efficiency_figures()
     write_markdown(summary, efficiency)
-    write_pdf(summary, efficiency)
+    build_latex_report(compile_pdf=True)
     print("[ok] Wrote comparison artifacts to", OUT)
     print("[ok] Wrote report to", REPORT_DIR)
 

@@ -104,6 +104,7 @@ The final pipeline successfully produces reproducible outputs for FLIP, APIC, an
 - `output/benchmark_efficiency/liquid_pouring_efficiency_ms_per_frame.png`
 - `output/benchmark_efficiency/speedup_vs_flip.png`
 - `docs/final_report/efficiency_benchmark.md`
+- `docs/final_report/option1_comparative_study.tex`
 - `docs/final_report/option1_comparative_study.pdf`
 - `docs/final_report/option1_comparative_study.md`
 
