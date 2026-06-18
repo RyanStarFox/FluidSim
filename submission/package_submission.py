@@ -16,50 +16,82 @@ REVIEW_NOTE_ARCNAME = "README_FOR_REVIEW.txt"
 
 REVIEW_NOTE_TEXT = """FluidSim final submission package overview
 
-This zip is prepared for the final course project submission and group review.
-The report PDF is also copied to the top level of the zip for quick access.
+本说明用于组员快速审阅最终提交压缩包。文件名和目录结构保留英文，解释文字使用中文。
+压缩包根目录已经额外放置一份最终报告 PDF，方便打开检查。
+
+Package structure
+fluidsim_final_submission.zip
+├── option1_comparative_study.pdf
+├── README_FOR_REVIEW.txt
+├── README.md
+├── framework.py
+├── plot_energy.py
+├── render_all.sh
+├── scripts/
+├── docs/
+│   ├── APIC_RESULTS.md
+│   ├── POLYPIC_RESULTS.md
+│   └── final_report/
+│       ├── option1_comparative_study.pdf
+│       ├── option1_comparative_study.tex
+│       ├── efficiency_benchmark.md
+│       └── figures/
+├── submission/
+│   ├── README_SUBMISSION.md
+│   ├── package_submission.py
+│   ├── package_submission.sh
+│   └── code/
+│       ├── flip/framework.py
+│       ├── apic/framework.py
+│       └── polypic/framework.py
+└── output/
+    ├── flip/ratio_970/
+    ├── apic/ratio_970/
+    ├── polypic/ratio_970/
+    ├── comparison/
+    └── benchmark_efficiency/
 
 Top-level files
-- option1_comparative_study.pdf: final report PDF. The appendix contains team member names, identifiers, student IDs, and division of work.
-- README_FOR_REVIEW.txt: this plain-text review note.
-- README.md: repository-level usage notes.
-- framework.py: framework file from the final branch.
-- plot_energy.py, render_all.sh: helper scripts.
+- option1_comparative_study.pdf: 最终报告 PDF。报告附录包含小组成员姓名、缩写、学号和分工。
+- README_FOR_REVIEW.txt: 当前这份纯文本审阅说明，方便组员不解压太深也能知道包里有什么。
+- README.md: 仓库原始说明，包括运行环境、基本命令和输出结构。
+- framework.py: final 分支根目录下的框架文件，仅作仓库入口参考；三算法源码以 submission/code/ 下的副本为准。
+- plot_energy.py, render_all.sh: 绘图和批处理辅助脚本。
 
 Source code
-- submission/code/flip/framework.py: FLIP baseline source exported from branch main.
-- submission/code/apic/framework.py: APIC source exported from branch apic-branch.
-- submission/code/polypic/framework.py: PolyPIC source exported from branch polypic.
-- scripts/: report generation, plotting, benchmark, and packaging scripts.
+- submission/code/flip/framework.py: FLIP baseline 代码，从 main 分支导出。
+- submission/code/apic/framework.py: APIC 代码，从 apic-branch 分支导出。
+- submission/code/polypic/framework.py: PolyPIC 代码，从 polypic 分支导出。
+- scripts/: 包含报告生成、效率汇总、打包和 benchmark 相关脚本。
 
 Report and figures
-- docs/final_report/option1_comparative_study.pdf: same final report PDF, kept with the LaTeX source and figures.
-- docs/final_report/option1_comparative_study.tex: LaTeX source.
-- docs/final_report/figures/: final report figures and screenshots.
+- docs/final_report/option1_comparative_study.pdf: 与根目录报告相同，保留在报告目录中方便配合 LaTeX 源码查看。
+- docs/final_report/option1_comparative_study.tex: 最终报告的 LaTeX 源文件。
+- docs/final_report/figures/: 报告中使用的能量曲线、效率图、截图和汇总图。
 
 Demo videos
-- output/flip/ratio_970/dam_break/dam_break.mp4
-- output/flip/ratio_970/liquid_pouring/liquid_pouring.mp4
-- output/apic/ratio_970/dam_break/dam_break.mp4
-- output/apic/ratio_970/liquid_pouring/liquid_pouring.mp4
-- output/polypic/ratio_970/dam_break/dam_break.mp4
-- output/polypic/ratio_970/liquid_pouring/liquid_pouring.mp4
+- output/flip/ratio_970/dam_break/dam_break.mp4: FLIP 溃坝场景 demo。
+- output/flip/ratio_970/liquid_pouring/liquid_pouring.mp4: FLIP 倒水场景 demo。
+- output/apic/ratio_970/dam_break/dam_break.mp4: APIC 溃坝场景 demo。
+- output/apic/ratio_970/liquid_pouring/liquid_pouring.mp4: APIC 倒水场景 demo。
+- output/polypic/ratio_970/dam_break/dam_break.mp4: PolyPIC 溃坝场景 demo。
+- output/polypic/ratio_970/liquid_pouring/liquid_pouring.mp4: PolyPIC 倒水场景 demo。
 
 Data and benchmark outputs
-- output/comparison/: cross-algorithm energy CSV files and comparison plots.
-- output/benchmark_efficiency/: efficiency summary CSV files, metadata, and benchmark plots.
-- output/{flip,apic,polypic}/ratio_970/: per-algorithm energy CSV files, energy plots, and demo videos.
+- output/comparison/: 三个算法的能量曲线对比数据、AUC 汇总和对比图。
+- output/benchmark_efficiency/: 效率实验的 summary CSV、逐次运行 CSV、硬件元数据和效率图。
+- output/{flip,apic,polypic}/ratio_970/: 每个算法在两个场景下的 energy.csv、energy.png 和 demo 视频。
 
 Team information in the report appendix
-- Qinzhe Hu (hqz, 523030910139): PolyPIC branch, data visualization, final report, integration.
-- Yan Shao (sy, 523031910224): shared framework, FLIP baseline, common scenes, baseline results.
-- Baihan Deng (dbh, 523031910756): APIC branch, APIC validation, efficiency comparison support.
+- Qinzhe Hu (hqz, 523030910139): PolyPIC 分支实现、对比数据可视化、最终报告撰写、提交材料整合。
+- Yan Shao (sy, 523031910224): 统一模拟框架、FLIP baseline、公共实验场景设置、基线结果生成。
+- Baihan Deng (dbh, 523031910756): APIC 分支实现、APIC 完整运行验证、效率对比支持。
 
 Not included
-- division_of_work.md is intentionally not included in the zip.
-- Raw rendered frame directories are excluded.
-- Raw benchmark logs are excluded.
-- .git, caches, local environments, and dist/ are excluded.
+- division_of_work.md: 按要求不放入最终 zip。
+- frames/: 原始逐帧 PNG 数量较多，属于中间产物，已排除。
+- output/benchmark_efficiency/raw/: 原始 benchmark 日志属于中间产物，已排除。
+- .git, caches, local environments, dist/: 本地开发和缓存目录，已排除。
 """
 
 INCLUDE_PATHS = [
