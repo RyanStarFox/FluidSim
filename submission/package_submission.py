@@ -12,7 +12,6 @@ ZIP_PATH = DIST / "fluidsim_final_submission.zip"
 
 INCLUDE_PATHS = [
     "README.md",
-    "division_of_work.md",
     "framework.py",
     "plot_energy.py",
     "render_all.sh",

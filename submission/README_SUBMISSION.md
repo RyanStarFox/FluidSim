@@ -85,15 +85,14 @@ files and can be omitted from the final zip unless detailed provenance is needed
 | Member | Student ID | Main responsibility |
 |---|---|---|
 | Qinzhe Hu (hqz) | 523030910139 | PolyPIC branch, data visualization, final report and integration |
-| Yan Shao (sy) | 523031910224 | APIC branch, APIC output validation, presentation support |
-| Baihan Deng (dbh) | 523031910756 | Shared framework, FLIP baseline, common scene setup |
+| Yan Shao (sy) | 523031910224 | Shared framework, FLIP baseline, common scene setup |
+| Baihan Deng (dbh) | 523031910756 | APIC branch, APIC output validation, presentation support |
 
 ## Recommended Zip Contents
 
 For a compact submission zip, include:
 
 - `README.md`
-- `division_of_work.md`
 - `submission/`
 - `framework.py`
 - `plot_energy.py`
