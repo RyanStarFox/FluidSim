@@ -386,6 +386,15 @@ The experiment set is also intentionally narrow: it contains two scenes, one gri
 
 Large language models assisted with implementation debugging, batch-command preparation, plotting code, and language editing. All numerical values in the tables and figures are computed from the committed simulation outputs.
 
+\appendices
+\section{Team Members and Division of Work}
+
+\begin{itemize}
+  \item \textbf{Qinzhe Hu} (hqz, 523030910139): PolyPIC branch implementation, comparison data visualization, final report writing, and final artifact integration.
+  \item \textbf{Yan Shao} (sy, 523031910224): APIC branch implementation, APIC full-run validation, efficiency comparison support, and presentation preparation.
+  \item \textbf{Baihan Deng} (dbh, 523031910756): Shared simulation framework, FLIP baseline implementation, common scene setup, and baseline result generation.
+\end{itemize}
+
 \begin{thebibliography}{00}
 
 \bibitem{brackbill1986flip}

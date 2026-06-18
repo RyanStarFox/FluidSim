@@ -12,9 +12,8 @@ one place.
   - `docs/final_report/option1_comparative_study.tex`
   - `scripts/build_latex_report.py`
 
-Important: the current PDF already contains the team member names, but the
-student IDs are not known in this repository. Before uploading the final zip,
-add the student IDs and the verified per-member division of work to the PDF.
+The PDF report includes the team member names in the title block and records
+student IDs plus the division of work in the appendix.
 
 ## Source Code
 
@@ -83,13 +82,11 @@ files and can be omitted from the final zip unless detailed provenance is needed
 
 ## Team and Division of Work
 
-Verify this mapping before final upload:
-
 | Member | Student ID | Main responsibility |
 |---|---|---|
-| Qinzhe Hu | TODO | PolyPIC branch, data visualization, final report and integration |
-| Yan Shao | TODO | APIC branch, APIC output validation, presentation support |
-| Baihan Deng | TODO | Shared framework, FLIP baseline, common scene setup |
+| Qinzhe Hu (hqz) | 523030910139 | PolyPIC branch, data visualization, final report and integration |
+| Yan Shao (sy) | 523031910224 | APIC branch, APIC output validation, presentation support |
+| Baihan Deng (dbh) | 523031910756 | Shared framework, FLIP baseline, common scene setup |
 
 ## Recommended Zip Contents
 

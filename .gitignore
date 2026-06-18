@@ -9,3 +9,4 @@ output/flip/*/*/frames/
 output/apic/*/*/frames/
 output/polypic/*/*/frames/
 output/slurm_smoke/
+dist/
