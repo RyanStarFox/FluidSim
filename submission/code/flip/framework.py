@@ -52,9 +52,6 @@ DT = FRAME_DT / SUBSTEPS
 # Hard velocity ceiling: clamp |v| ≤ 0.9*DX/DT each substep (CFL safety).
 # DX=0.01, DT=1/120 → V_MAX = 0.9*0.01*120 = 1.08 m/s.
 V_MAX_PHYS = 0.9 * DX / DT
-APIC_VALUE_MAX = V_MAX_PHYS
-APIC_C_MAX = V_MAX_PHYS / DX
-APIC_C_DAMPING = 0.5
 NUM_FRAMES = 450
 PHYSICS_DURATION = NUM_FRAMES * FRAME_DT
 
@@ -633,267 +630,6 @@ def g2p_flip():
         c6[p] = 0.0; c7[p] = 0.0; c8[p] = 0.0
 
 
-@ti.func
-def _sanitize_limit(x: ti.f32, limit: ti.f32) -> ti.f32:
-    y = x
-    if y != y:
-        y = 0.0
-    if y > limit:
-        y = limit
-    if y < -limit:
-        y = -limit
-    return y
-
-
-@ti.func
-def _damped_limit(x: ti.f32, limit: ti.f32, damping: ti.f32) -> ti.f32:
-    return _sanitize_limit(x * damping, limit)
-
-
-@ti.kernel
-def p2g_apic():
-    """Scatter particle velocity + affine momentum to MAC grid using trilinear weights."""
-    for i, j, k in u:       u[i, j, k] = 0.0
-    for i, j, k in v:       v[i, j, k] = 0.0
-    for i, j, k in w:       w[i, j, k] = 0.0
-    for i, j, k in u_saved: u_saved[i, j, k] = 0.0
-    for i, j, k in v_saved: v_saved[i, j, k] = 0.0
-    for i, j, k in w_saved: w_saved[i, j, k] = 0.0
-
-    val_lim = ti.cast(APIC_VALUE_MAX, ti.f32)
-
-    for p in range(num_particles[None]):
-        xp = px[p] * INV_DX
-        yp = py[p] * INV_DX
-        zp = pz[p] * INV_DX
-        C = ti.Matrix([[c0[p], c1[p], c2[p]],
-                       [c3[p], c4[p], c5[p]],
-                       [c6[p], c7[p], c8[p]]])
-        vel_p = ti.Vector([pu[p], pv[p], pw[p]])
-
-        # --- u-field: staggered at (i, j+0.5, k+0.5) ---
-        iu = ti.cast(xp, ti.i32)
-        ju = ti.cast(yp - 0.5, ti.i32)
-        ku = ti.cast(zp - 0.5, ti.i32)
-        fxu = xp - ti.cast(iu, ti.f32)
-        fyu = yp - 0.5 - ti.cast(ju, ti.f32)
-        fzu = zp - 0.5 - ti.cast(ku, ti.f32)
-        for di in ti.static(range(2)):
-            for dj in ti.static(range(2)):
-                for dk in ti.static(range(2)):
-                    wx = fxu if di == 1 else (1.0 - fxu)
-                    wy = fyu if dj == 1 else (1.0 - fyu)
-                    wz = fzu if dk == 1 else (1.0 - fzu)
-                    wt = wx * wy * wz
-                    ni = iu + di; nj = ju + dj; nk = ku + dk
-                    if 0 <= ni <= NX and 0 <= nj < NY and 0 <= nk < NZ:
-                        dpos = ti.Vector([
-                            (ti.cast(ni, ti.f32) - xp) * DX,
-                            (ti.cast(nj, ti.f32) + 0.5 - yp) * DX,
-                            (ti.cast(nk, ti.f32) + 0.5 - zp) * DX,
-                        ])
-                        g_v = vel_p + C @ dpos
-                        u[ni, nj, nk]       += wt * _sanitize_limit(g_v.x, val_lim)
-                        u_saved[ni, nj, nk] += wt
-
-        # --- v-field: staggered at (i+0.5, j, k+0.5) ---
-        iv = ti.cast(xp - 0.5, ti.i32)
-        jv = ti.cast(yp, ti.i32)
-        kv = ti.cast(zp - 0.5, ti.i32)
-        fxv = xp - 0.5 - ti.cast(iv, ti.f32)
-        fyv = yp - ti.cast(jv, ti.f32)
-        fzv = zp - 0.5 - ti.cast(kv, ti.f32)
-        for di in ti.static(range(2)):
-            for dj in ti.static(range(2)):
-                for dk in ti.static(range(2)):
-                    wx = fxv if di == 1 else (1.0 - fxv)
-                    wy = fyv if dj == 1 else (1.0 - fyv)
-                    wz = fzv if dk == 1 else (1.0 - fzv)
-                    wt = wx * wy * wz
-                    ni = iv + di; nj = jv + dj; nk = kv + dk
-                    if 0 <= ni < NX and 0 <= nj <= NY and 0 <= nk < NZ:
-                        dpos = ti.Vector([
-                            (ti.cast(ni, ti.f32) + 0.5 - xp) * DX,
-                            (ti.cast(nj, ti.f32) - yp) * DX,
-                            (ti.cast(nk, ti.f32) + 0.5 - zp) * DX,
-                        ])
-                        g_v = vel_p + C @ dpos
-                        v[ni, nj, nk]       += wt * _sanitize_limit(g_v.y, val_lim)
-                        v_saved[ni, nj, nk] += wt
-
-        # --- w-field: staggered at (i+0.5, j+0.5, k) ---
-        iw = ti.cast(xp - 0.5, ti.i32)
-        jw = ti.cast(yp - 0.5, ti.i32)
-        kw = ti.cast(zp, ti.i32)
-        fxw = xp - 0.5 - ti.cast(iw, ti.f32)
-        fyw = yp - 0.5 - ti.cast(jw, ti.f32)
-        fzw = zp - ti.cast(kw, ti.f32)
-        for di in ti.static(range(2)):
-            for dj in ti.static(range(2)):
-                for dk in ti.static(range(2)):
-                    wx = fxw if di == 1 else (1.0 - fxw)
-                    wy = fyw if dj == 1 else (1.0 - fyw)
-                    wz = fzw if dk == 1 else (1.0 - fzw)
-                    wt = wx * wy * wz
-                    ni = iw + di; nj = jw + dj; nk = kw + dk
-                    if 0 <= ni < NX and 0 <= nj < NY and 0 <= nk <= NZ:
-                        dpos = ti.Vector([
-                            (ti.cast(ni, ti.f32) + 0.5 - xp) * DX,
-                            (ti.cast(nj, ti.f32) + 0.5 - yp) * DX,
-                            (ti.cast(nk, ti.f32) - zp) * DX,
-                        ])
-                        g_v = vel_p + C @ dpos
-                        w[ni, nj, nk]       += wt * _sanitize_limit(g_v.z, val_lim)
-                        w_saved[ni, nj, nk] += wt
-
-    for i, j, k in u:
-        if u_saved[i, j, k] > 1e-8:
-            u[i, j, k] /= u_saved[i, j, k]
-    for i, j, k in v:
-        if v_saved[i, j, k] > 1e-8:
-            v[i, j, k] /= v_saved[i, j, k]
-    for i, j, k in w:
-        if w_saved[i, j, k] > 1e-8:
-            w[i, j, k] /= w_saved[i, j, k]
-
-
-@ti.kernel
-def g2p_apic():
-    """Interpolate MAC grid velocities to particles and update affine matrices."""
-    v_lim = ti.cast(APIC_VALUE_MAX, ti.f32)
-    c_lim = ti.cast(APIC_C_MAX, ti.f32)
-    c_damp = ti.cast(APIC_C_DAMPING, ti.f32)
-
-    for p in range(num_particles[None]):
-        xp = px[p] * INV_DX
-        yp = py[p] * INV_DX
-        zp = pz[p] * INV_DX
-
-        # --- Interpolate u ---
-        iu = ti.cast(xp, ti.i32)
-        ju = ti.cast(yp - 0.5, ti.i32)
-        ku = ti.cast(zp - 0.5, ti.i32)
-        fxu = xp - ti.cast(iu, ti.f32)
-        fyu = yp - 0.5 - ti.cast(ju, ti.f32)
-        fzu = zp - 0.5 - ti.cast(ku, ti.f32)
-        u_new = 0.0
-        for di in ti.static(range(2)):
-            for dj in ti.static(range(2)):
-                for dk in ti.static(range(2)):
-                    wx = fxu if di == 1 else (1.0 - fxu)
-                    wy = fyu if dj == 1 else (1.0 - fyu)
-                    wz = fzu if dk == 1 else (1.0 - fzu)
-                    wt = wx * wy * wz
-                    ni = iu + di; nj = ju + dj; nk = ku + dk
-                    if 0 <= ni <= NX and 0 <= nj < NY and 0 <= nk < NZ:
-                        u_new += wt * u[ni, nj, nk]
-
-        # --- Interpolate v ---
-        iv = ti.cast(xp - 0.5, ti.i32)
-        jv = ti.cast(yp, ti.i32)
-        kv = ti.cast(zp - 0.5, ti.i32)
-        fxv = xp - 0.5 - ti.cast(iv, ti.f32)
-        fyv = yp - ti.cast(jv, ti.f32)
-        fzv = zp - 0.5 - ti.cast(kv, ti.f32)
-        v_new = 0.0
-        for di in ti.static(range(2)):
-            for dj in ti.static(range(2)):
-                for dk in ti.static(range(2)):
-                    wx = fxv if di == 1 else (1.0 - fxv)
-                    wy = fyv if dj == 1 else (1.0 - fyv)
-                    wz = fzv if dk == 1 else (1.0 - fzv)
-                    wt = wx * wy * wz
-                    ni = iv + di; nj = jv + dj; nk = kv + dk
-                    if 0 <= ni < NX and 0 <= nj <= NY and 0 <= nk < NZ:
-                        v_new += wt * v[ni, nj, nk]
-
-        # --- Interpolate w ---
-        iw = ti.cast(xp - 0.5, ti.i32)
-        jw = ti.cast(yp - 0.5, ti.i32)
-        kw = ti.cast(zp, ti.i32)
-        fxw = xp - 0.5 - ti.cast(iw, ti.f32)
-        fyw = yp - 0.5 - ti.cast(jw, ti.f32)
-        fzw = zp - ti.cast(kw, ti.f32)
-        w_new = 0.0
-        for di in ti.static(range(2)):
-            for dj in ti.static(range(2)):
-                for dk in ti.static(range(2)):
-                    wx = fxw if di == 1 else (1.0 - fxw)
-                    wy = fyw if dj == 1 else (1.0 - fyw)
-                    wz = fzw if dk == 1 else (1.0 - fzw)
-                    wt = wx * wy * wz
-                    ni = iw + di; nj = jw + dj; nk = kw + dk
-                    if 0 <= ni < NX and 0 <= nj < NY and 0 <= nk <= NZ:
-                        w_new += wt * w[ni, nj, nk]
-
-        new_v = ti.Vector([u_new, v_new, w_new])
-        new_C = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
-        # u-node contributions: only x velocity available at u locations
-        for di in ti.static(range(2)):
-            for dj in ti.static(range(2)):
-                for dk in ti.static(range(2)):
-                    wx = fxu if di == 1 else (1.0 - fxu)
-                    wy = fyu if dj == 1 else (1.0 - fyu)
-                    wz = fzu if dk == 1 else (1.0 - fzu)
-                    wt = wx * wy * wz
-                    ni = iu + di; nj = ju + dj; nk = ku + dk
-                    if 0 <= ni <= NX and 0 <= nj < NY and 0 <= nk < NZ:
-                        dpos = ti.Vector([
-                            (ti.cast(ni, ti.f32) - xp) * DX,
-                            (ti.cast(nj, ti.f32) + 0.5 - yp) * DX,
-                            (ti.cast(nk, ti.f32) + 0.5 - zp) * DX,
-                        ])
-                        g_v = ti.Vector([u[ni, nj, nk], 0.0, 0.0])
-                        new_C += 4.0 * INV_DX * INV_DX * wt * g_v.outer_product(dpos)
-        # v-node contributions: only y velocity at v locations
-        for di in ti.static(range(2)):
-            for dj in ti.static(range(2)):
-                for dk in ti.static(range(2)):
-                    wx = fxv if di == 1 else (1.0 - fxv)
-                    wy = fyv if dj == 1 else (1.0 - fyv)
-                    wz = fzv if dk == 1 else (1.0 - fzv)
-                    wt = wx * wy * wz
-                    ni = iv + di; nj = jv + dj; nk = kv + dk
-                    if 0 <= ni < NX and 0 <= nj <= NY and 0 <= nk < NZ:
-                        dpos = ti.Vector([
-                            (ti.cast(ni, ti.f32) + 0.5 - xp) * DX,
-                            (ti.cast(nj, ti.f32) - yp) * DX,
-                            (ti.cast(nk, ti.f32) + 0.5 - zp) * DX,
-                        ])
-                        g_v = ti.Vector([0.0, v[ni, nj, nk], 0.0])
-                        new_C += 4.0 * INV_DX * INV_DX * wt * g_v.outer_product(dpos)
-        # w-node contributions: only z velocity at w locations
-        for di in ti.static(range(2)):
-            for dj in ti.static(range(2)):
-                for dk in ti.static(range(2)):
-                    wx = fxw if di == 1 else (1.0 - fxw)
-                    wy = fyw if dj == 1 else (1.0 - fyw)
-                    wz = fzw if dk == 1 else (1.0 - fzw)
-                    wt = wx * wy * wz
-                    ni = iw + di; nj = jw + dj; nk = kw + dk
-                    if 0 <= ni < NX and 0 <= nj < NY and 0 <= nk <= NZ:
-                        dpos = ti.Vector([
-                            (ti.cast(ni, ti.f32) + 0.5 - xp) * DX,
-                            (ti.cast(nj, ti.f32) + 0.5 - yp) * DX,
-                            (ti.cast(nk, ti.f32) - zp) * DX,
-                        ])
-                        g_v = ti.Vector([0.0, 0.0, w[ni, nj, nk]])
-                        new_C += 4.0 * INV_DX * INV_DX * wt * g_v.outer_product(dpos)
-
-        pu[p] = _sanitize_limit(new_v.x, v_lim)
-        pv[p] = _sanitize_limit(new_v.y, v_lim)
-        pw[p] = _sanitize_limit(new_v.z, v_lim)
-        c0[p] = _damped_limit(new_C[0, 0], c_lim, c_damp)
-        c1[p] = _damped_limit(new_C[0, 1], c_lim, c_damp)
-        c2[p] = _damped_limit(new_C[0, 2], c_lim, c_damp)
-        c3[p] = _damped_limit(new_C[1, 0], c_lim, c_damp)
-        c4[p] = _damped_limit(new_C[1, 1], c_lim, c_damp)
-        c5[p] = _damped_limit(new_C[1, 2], c_lim, c_damp)
-        c6[p] = _damped_limit(new_C[2, 0], c_lim, c_damp)
-        c7[p] = _damped_limit(new_C[2, 1], c_lim, c_damp)
-        c8[p] = _damped_limit(new_C[2, 2], c_lim, c_damp)
-
-
 # =============================================================================
 # Particle advection -- 3D forward Euler
 # =============================================================================
@@ -906,10 +642,6 @@ def advect_particles():
     dom_z = ti.cast(NZ, ti.f32) * DX - 1e-5
     v_lim = ti.cast(V_MAX_PHYS, ti.f32)
     for p in range(num_particles[None]):
-        pu[p] = _sanitize_limit(pu[p], v_lim)
-        pv[p] = _sanitize_limit(pv[p], v_lim)
-        pw[p] = _sanitize_limit(pw[p], v_lim)
-
         # CFL velocity clamp: prevent particles from skipping multiple cells
         spd = ti.sqrt(pu[p]*pu[p] + pv[p]*pv[p] + pw[p]*pw[p])
         if spd > v_lim:
@@ -1023,9 +755,11 @@ def fluid_step():
 
     Replace the body of this function for APIC (Student B) or PolyPIC (Student C).
     """
+    # P2G: scatter particle velocities to grid (trilinear weights)
+    p2g_trilinear()
 
-    # APIC P2G: scatter particle velocity + affine momentum to MAC grid.
-    p2g_apic()
+    # Save grid velocities before forces/projection (for FLIP delta)
+    save_velocities()
 
     # External forces
     add_gravity()
@@ -1041,8 +775,8 @@ def fluid_step():
     # Re-enforce BC after pressure correction
     enforce_boundary_velocity()
 
-    # APIC G2P: interpolate grid velocity back to particles and update C.
-    g2p_apic()
+    # G2P: update particle velocities (PIC-FLIP blend)
+    g2p_flip()
 
 
 # =============================================================================
@@ -1232,9 +966,7 @@ def compute_kinetic_energy() -> float:
     pu_np = pu.to_numpy()[:n]
     pv_np = pv.to_numpy()[:n]
     pw_np = pw.to_numpy()[:n]
-    speed_sq = pu_np**2 + pv_np**2 + pw_np**2
-    speed_sq = np.where(np.isfinite(speed_sq), speed_sq, 0.0)
-    return float(0.5 * MASS_PER_PARTICLE * np.sum(speed_sq))
+    return float(0.5 * MASS_PER_PARTICLE * np.sum(pu_np**2 + pv_np**2 + pw_np**2))
 
 
 @ti.kernel
@@ -1606,13 +1338,13 @@ def main():
     scenes = ["dam_break", "liquid_pouring"] if scene_arg == "all" else [scene_arg]
 
     print(f"[framework] 3D simulation  Grid: {NX}x{NY}x{NZ}")
-    print(f"[framework] Scenes: {scenes}  |  APIC ratios: {ratios}")
+    print(f"[framework] Scenes: {scenes}  |  FLIP ratios: {ratios}")
 
     t0 = time.perf_counter()
     for scene in scenes:
         for ratio in ratios:
             ratio_str = f"ratio_{int(ratio * 1000):03d}"
-            out_dir = OUTPUT_BASE / "apic" / ratio_str / scene
+            out_dir = OUTPUT_BASE / "flip" / ratio_str / scene
             run_simulation(scene, ratio, out_dir)
 
     elapsed = time.perf_counter() - t0

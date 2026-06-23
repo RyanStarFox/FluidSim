@@ -1,0 +1,86 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand*\HyPL@Entry[1]{}
+\citation{foster2001liquids}
+\citation{bridson}
+\citation{brackbill1986flip}
+\citation{zhu2005sand}
+\citation{jiang2015apic}
+\citation{fu2017polypic}
+\citation{hu2019taichi}
+\HyPL@Entry{0<</S/D>>}
+\@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {II}Related Work}{1}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {III}Methods}{1}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Shared Simulation Framework}{1}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Transfer Schemes}{1}{subsection.3.2}\protected@file@percent }
+\newlabel{eq:flip}{{1}{1}{Transfer Schemes}{equation.1}{}}
+\newlabel{eq:apic-local}{{2}{2}{Transfer Schemes}{equation.2}{}}
+\newlabel{eq:apic-p2g}{{3}{2}{Transfer Schemes}{equation.3}{}}
+\newlabel{eq:apic-g2p}{{4}{2}{Transfer Schemes}{equation.4}{}}
+\newlabel{eq:polypic}{{5}{2}{Transfer Schemes}{equation.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Metrics and Efficiency Benchmark}{2}{subsection.3.3}\protected@file@percent }
+\newlabel{eq:energy}{{6}{2}{Metrics and Efficiency Benchmark}{equation.6}{}}
+\newlabel{eq:auc}{{7}{2}{Metrics and Efficiency Benchmark}{equation.7}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Dam-break kinetic-energy evolution. PolyPIC keeps the largest integrated kinetic energy over the full run, while APIC reaches the highest peak and then dissipates more strongly.}}{2}{figure.1}\protected@file@percent }
+\newlabel{fig:dam-energy}{{1}{2}{Dam-break kinetic-energy evolution. PolyPIC keeps the largest integrated kinetic energy over the full run, while APIC reaches the highest peak and then dissipates more strongly}{figure.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Dam-break energy summary. Final/Peak measures how much of each method's own peak kinetic energy remains at frame 300.}}{2}{table.1}\protected@file@percent }
+\newlabel{tab:dam-energy}{{I}{2}{Dam-break energy summary. Final/Peak measures how much of each method's own peak kinetic energy remains at frame 300}{table.1}{}}
+\newlabel{eq:speedup}{{8}{2}{Metrics and Efficiency Benchmark}{equation.8}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {IV}Results}{2}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Dam-Break Energy Behavior}{2}{subsection.4.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Peak-normalized dam-break energy. Normalization removes scale differences and emphasizes dissipation after each method's own peak.}}{3}{figure.2}\protected@file@percent }
+\newlabel{fig:dam-normalized}{{2}{3}{Peak-normalized dam-break energy. Normalization removes scale differences and emphasizes dissipation after each method's own peak}{figure.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Liquid-pouring kinetic-energy evolution. FLIP reaches and maintains much higher kinetic energy than APIC and PolyPIC in the driven-source setup.}}{3}{figure.3}\protected@file@percent }
+\newlabel{fig:pour-energy}{{3}{3}{Liquid-pouring kinetic-energy evolution. FLIP reaches and maintains much higher kinetic energy than APIC and PolyPIC in the driven-source setup}{figure.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Liquid-pouring energy summary. The lower APIC/PolyPIC values indicate more restrained transfer behavior in this forced scenario.}}{3}{table.2}\protected@file@percent }
+\newlabel{tab:pour-energy}{{II}{3}{Liquid-pouring energy summary. The lower APIC/PolyPIC values indicate more restrained transfer behavior in this forced scenario}{table.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Liquid-Pouring Energy Behavior}{3}{subsection.4.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Peak-normalized liquid-pouring energy. APIC and PolyPIC remain close after their peaks, while FLIP maintains a much higher absolute kinetic-energy level.}}{3}{figure.4}\protected@file@percent }
+\newlabel{fig:pour-normalized}{{4}{3}{Peak-normalized liquid-pouring energy. APIC and PolyPIC remain close after their peaks, while FLIP maintains a much higher absolute kinetic-energy level}{figure.4}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Integrated kinetic energy across all method-scene pairs. This aggregate view highlights PolyPIC's dam-break advantage and FLIP's high-energy pouring behavior.}}{3}{figure.5}\protected@file@percent }
+\newlabel{fig:auc-summary}{{5}{3}{Integrated kinetic energy across all method-scene pairs. This aggregate view highlights PolyPIC's dam-break advantage and FLIP's high-energy pouring behavior}{figure.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces FLIP ratio sweep dam-break summary. Retention is final kinetic energy divided by initial kinetic energy.}}{3}{table.3}\protected@file@percent }
+\newlabel{tab:flip-sweep-dam}{{III}{3}{FLIP ratio sweep dam-break summary. Retention is final kinetic energy divided by initial kinetic energy}{table.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-C}}FLIP PIC-FLIP Ratio Sweep}{3}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-C}1}Dam Break}{3}{table.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-C}2}Liquid Pouring}{3}{table.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Dam-break kinetic energy across FLIP blend ratios. Pure FLIP (ratio~$=$~1.00) shows an explosive energy spike, while pure PIC (ratio~$=$~0.00) dissipates energy almost immediately. The ratio~$=$~0.97 used in the main comparison sits in a narrow effective window.}}{4}{figure.6}\protected@file@percent }
+\newlabel{fig:flip-sweep-dam-energy}{{6}{4}{Dam-break kinetic energy across FLIP blend ratios. Pure FLIP (ratio~$=$~1.00) shows an explosive energy spike, while pure PIC (ratio~$=$~0.00) dissipates energy almost immediately. The ratio~$=$~0.97 used in the main comparison sits in a narrow effective window}{figure.6}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Peak-normalized dam-break energy by FLIP ratio. Normalization emphasizes the dissipation trajectory after each ratio's peak.}}{4}{figure.7}\protected@file@percent }
+\newlabel{fig:flip-sweep-dam-norm}{{7}{4}{Peak-normalized dam-break energy by FLIP ratio. Normalization emphasizes the dissipation trajectory after each ratio's peak}{figure.7}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Liquid-pouring kinetic energy across FLIP blend ratios. The same pattern repeats: pure FLIP is unstable, pure PIC is severely dissipative, and high-but-not-unity ratios provide the most plausible behavior.}}{4}{figure.8}\protected@file@percent }
+\newlabel{fig:flip-sweep-pour-energy}{{8}{4}{Liquid-pouring kinetic energy across FLIP blend ratios. The same pattern repeats: pure FLIP is unstable, pure PIC is severely dissipative, and high-but-not-unity ratios provide the most plausible behavior}{figure.8}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {IV-C}3}Visual Comparison across Ratios}{4}{figure.10}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {IV}{\ignorespaces FLIP ratio sweep liquid-pouring summary. Retention is final kinetic energy divided by initial kinetic energy.}}{4}{table.4}\protected@file@percent }
+\newlabel{tab:flip-sweep-pour}{{IV}{4}{FLIP ratio sweep liquid-pouring summary. Retention is final kinetic energy divided by initial kinetic energy}{table.4}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces FLIP ratio sweep visual comparison at $t=2.5$s for the dam-break scene. Pure PIC shows a barely propagating wave; pure FLIP displays visible particle scattering; ratios 0.95--0.97 show well-defined fluid surfaces.}}{4}{figure.9}\protected@file@percent }
+\newlabel{fig:flip-sweep-dam-visual}{{9}{4}{FLIP ratio sweep visual comparison at $t=2.5$s for the dam-break scene. Pure PIC shows a barely propagating wave; pure FLIP displays visible particle scattering; ratios 0.95--0.97 show well-defined fluid surfaces}{figure.9}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces FLIP ratio sweep visual comparison at $t=2.5$s for the liquid-pouring scene. The same pattern holds: pure FLIP is noisy, pure PIC is overly damped, and ratios near 0.97 provide the most plausible visual behavior.}}{4}{figure.10}\protected@file@percent }
+\newlabel{fig:flip-sweep-pour-visual}{{10}{4}{FLIP ratio sweep visual comparison at $t=2.5$s for the liquid-pouring scene. The same pattern holds: pure FLIP is noisy, pure PIC is overly damped, and ratios near 0.97 provide the most plausible visual behavior}{figure.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-D}}Visual Comparison}{4}{subsection.4.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Visual comparison extracted from the committed videos. The screenshots use the same rendering style and sampling time across algorithms.}}{5}{figure.11}\protected@file@percent }
+\newlabel{fig:visual}{{11}{5}{Visual comparison extracted from the committed videos. The screenshots use the same rendering style and sampling time across algorithms}{figure.11}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {12}{\ignorespaces Dam-break simulation-only frame time. Rendering and video export are disabled.}}{5}{figure.12}\protected@file@percent }
+\newlabel{fig:dam-efficiency}{{12}{5}{Dam-break simulation-only frame time. Rendering and video export are disabled}{figure.12}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {V}{\ignorespaces Dam-break efficiency benchmark. Speedup is normalized against FLIP.}}{5}{table.5}\protected@file@percent }
+\newlabel{tab:dam-efficiency}{{V}{5}{Dam-break efficiency benchmark. Speedup is normalized against FLIP}{table.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {VI}{\ignorespaces Liquid-pouring efficiency benchmark. Speedup is normalized against FLIP.}}{5}{table.6}\protected@file@percent }
+\newlabel{tab:pour-efficiency}{{VI}{5}{Liquid-pouring efficiency benchmark. Speedup is normalized against FLIP}{table.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-E}}Efficiency}{5}{subsection.4.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {13}{\ignorespaces Liquid-pouring simulation-only frame time. The same method ordering appears under the lower-particle-count scene.}}{5}{figure.13}\protected@file@percent }
+\newlabel{fig:pour-efficiency}{{13}{5}{Liquid-pouring simulation-only frame time. The same method ordering appears under the lower-particle-count scene}{figure.13}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {14}{\ignorespaces Relative speedup normalized against FLIP within each scene. Values below $1$ indicate slower runtime than the FLIP baseline.}}{5}{figure.14}\protected@file@percent }
+\newlabel{fig:speedup}{{14}{5}{Relative speedup normalized against FLIP within each scene. Values below $1$ indicate slower runtime than the FLIP baseline}{figure.14}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {V}Discussion}{5}{section.5}\protected@file@percent }
+\bibcite{brackbill1986flip}{1}
+\bibcite{foster2001liquids}{2}
+\bibcite{zhu2005sand}{3}
+\bibcite{jiang2015apic}{4}
+\bibcite{fu2017polypic}{5}
+\bibcite{hu2019taichi}{6}
+\bibcite{bridson}{7}
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Limitations}{6}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{Appendix\nobreakspace  A: Team Members and Division of Work}{6}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{References}{6}{section*.3}\protected@file@percent }
+\gdef \@abspage@last{6}
